@@ -1,0 +1,16 @@
+{
+  "name": "scheme",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jens Nicolay <jens.nicolay@gmail.com>",
+  "license": "CC-BY-NC-ND-4.0",
+  "devDependencies": {
+    "common": "file:../common",
+    "js-frontend": "file:../js-frontend"
+  }
+}
