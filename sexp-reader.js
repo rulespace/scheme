@@ -2,11 +2,16 @@ import {Characters, assertFalse} from 'common';
 
 let __nodeCounter__ = 0;
 
+const NULL = new Null();
+
 export function Null()
 {
 }
 
-const NULL = new Null();
+Null.prototype[Symbol.iterator] =
+  function* ()
+  {
+  }
 
 Null.prototype.valueOf =
   function ()
@@ -20,11 +25,11 @@ Null.prototype.toString =
     return "()";
   }
 
-  Null.prototype.isNull =
-  function ()
-  {
-    return true;
-  }  
+Null.prototype.isNull =
+function ()
+{
+  return true;
+}  
 
 export function Sym(name)
 {

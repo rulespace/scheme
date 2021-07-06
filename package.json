@@ -10,7 +10,6 @@
   "author": "Jens Nicolay <jens.nicolay@gmail.com>",
   "license": "CC-BY-NC-ND-4.0",
   "devDependencies": {
-    "common": "file:../common",
-    "js-frontend": "file:../js-frontend"
+    "common": "file:../common"
   }
 }
