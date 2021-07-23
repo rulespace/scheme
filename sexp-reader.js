@@ -317,7 +317,7 @@ SchemeTokenizer.prototype.parse =
       case "-" :
       {
         var d = this.reader.peek(); // peek?
-        if (Characters.isWhitespace(d) || d === ")" || d === "")
+        if (!Characters.isDigit(d))
         {
           var po = new Sym("-");
           po.tag = ++__nodeCounter__;

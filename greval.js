@@ -12,8 +12,6 @@ const spec = `
 (rule [ast e] [$if e _ _ _])
 (rule [ast e] [$app e _])
 
-(rule [binds e x] [param _ x e _])
-
 (rule [parent e p] [$let p e _ _])
 (rule [parent e p] [$let p _ e _])
 (rule [parent e p] [$let p _ _ e])
@@ -53,15 +51,11 @@ const spec = `
 (rule [cont e_body κ e’ κ’] [$let p _ _ e_body] [parent e_body p] [reachable e_body κ] [cont p κ e’ κ’])
 (rule [cont e_body κ e’ κ’] [$letrec p _ _ e_body] [parent e_body p] [reachable e_body κ] [cont p κ e’ κ’])
 (rule [cont e_then κ e’ κ’] [$if p _ e_then _] [parent e_then p] [reachable e_then κ] [cont p κ e’ κ’])
-(rule [cont e_else κ e’ κ’] [$if p _ _ e_else] [parent e_then p] [reachable e_then κ] [cont p κ e’ κ’])
+(rule [cont e_else κ e’ κ’] [$if p _ _ e_else] [parent e_else p] [reachable e_else κ] [cont p κ e’ κ’])
 (rule [cont e_body κ e’ κ’] [$lam p e_body] [parent e_body p] [step e_call κ_call e_body κ] [cont e_call κ_call e’ κ’])
 
-(rule [evaluated e e κ] [$lit e _] [reachable e κ])
-(rule [evaluated e e κ] [$id e _] [reachable e κ])
-(rule [evaluated e e κ] [$lam e _] [reachable e κ])
-(rule [evaluated e_rator e κ] [$app e e_rator] [reachable e κ])
-(rule [evaluated e_rand e κ] [$app e _] [arg e_rand e _] [reachable e κ])
-(rule [evaluated e_cond e κ] [$if e e_cond _ _] [reachable e κ])
+; backward lookup
+(rule [binds e x] [param _ x e _])
 
 (rule [lookup_root x e_body κ [root e_init e_init κ]] [$let e e_id e_init e_body] [$id e_id x] [reachable e κ])
 (rule [lookup_root x e_init κ [root e_init e_init κ]] [$letrec e e_id e_init _] [$id e_id x] [reachable e κ])
@@ -75,21 +69,38 @@ const spec = `
 (rule [lookup_root x e_else κ r] [lookup_root x p κ r] [$if p _ _ e_else])
 (rule [lookup_root x e_body κ’ [root e_rand e κ]] [$app e e_rator] [$lam e_lam e_body] [param e_param x e_lam i] [arg e_rand e i] [step e κ e_body κ’])
 (rule [lookup_root x e_body κ’ r] [$app e e_rator] [geval e_rator e κ [obj e_lam e_obj κ_obj]] [lookup_root x e_obj κ_obj r] (not [binds e_lam x]) [step e κ e_body κ’])
+
 (rule [lookup_root "+" e κ #f] [astroot e] [reachable e κ])
 (rule [lookup_root "-" e κ #f] [astroot e] [reachable e κ])
 (rule [lookup_root "*" e κ #f] [astroot e] [reachable e κ])
 (rule [lookup_root "=" e κ #f] [astroot e] [reachable e κ])
 (rule [lookup_root "<" e κ #f] [astroot e] [reachable e κ])
 
+; graph evaluator
+(rule [global_env "+" +])
+(rule [global_env "-" -])
+(rule [global_env "*" *])
+(rule [global_env "=" =])
+(rule [global_env "<" <])
+
+(rule [evaluated e e κ] [$lit e _] [reachable e κ])
+(rule [evaluated e e κ] [$id e _] [reachable e κ])
+(rule [evaluated e e κ] [$lam e _] [reachable e κ])
+(rule [evaluated e_rator e κ] [$app e e_rator] [reachable e κ])
+(rule [evaluated e_rand e κ] [$app e _] [arg e_rand e _] [reachable e κ])
+(rule [evaluated e_cond e κ] [$if e e_cond _ _] [reachable e κ])
+
 (rule [geval e’ e κ d] [$lit e’ d] [evaluated e’ e κ])
 (rule [geval e’ e κ d] [$id e’ x] [evaluated e’ e κ] [lookup_root x e κ [root e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
-(rule [geval e’ e κ [prim x]] [$id e’ x] [evaluated e’ e κ] [lookup_root x e κ #f])
+(rule [geval e’ e κ [prim proc]] [$id e’ x] [evaluated e’ e κ] [lookup_root x e κ #f] [global_env x proc])
 (rule [geval e’ e κ [obj e’ e κ]] [$lam e’ _] [evaluated e’ e κ])
 (rule [geval e e κ d] [$let e _ _ e_body] [reachable e κ] [geval e_body e_body κ d])
 (rule [geval e e κ d] [$letrec e _ _ e_body] [reachable e κ] [geval e_body e_body κ d])
 (rule [geval e e κ d] [$app e _] [step e κ e_body κ’] [$lam _ e_body] [geval e_body e_body κ’ d])
-(rule [geval e e κ d] [$app e e_rator] [reachable e κ] [geval e_rator e κ [prim "+"]] [arg e1 e 0] [geval e1 e κ d1] [arg e2 e 1] [geval e2 e κ d2] (:= d (+ d1 d2)))
+(rule [geval e e κ d] [$app e e_rator] [reachable e κ] [geval e_rator e κ [prim proc]] [arg e1 e 0] [geval e1 e κ d1] [arg e2 e 1] [geval e2 e κ d2] (:= d (proc d1 d2)))
 (rule [geval e e κ d] [$if e _ _ _] [step e κ e_thenelse κ] [geval e_thenelse e_thenelse κ d])
+
+; evaluator
 (rule [evaluate e d] [final e κ] [geval e e κ d])
 `;
 
@@ -124,19 +135,15 @@ export function greval(src)
   const astrootTuples = [...evaluator.tuples()].filter(t => t.constructor.name === 'astroot');
   if (astrootTuples.length !== 1)
   {
+    console.log("program:");
     console.log(src);
+    console.log("\nevaluator tuples:")
     console.log([...evaluator.tuples()].join('\n'));
     throw new Error(`wrong number of 'astroot' tuples: ${astrootTuples.length}`);
   }
 
   const evaluateTuples = [...evaluator.tuples()].filter(t => t.constructor.name === 'evaluate');
-  if (evaluateTuples.length !== 1)
-  {
-    console.log(src);
-    console.log([...evaluator.tuples()].join('\n'));
-    throw new Error(`wrong number of 'evaluate' tuples: ${evaluateTuples.length}`);
-  }
-  return evaluateTuples[0].t1;
+  return evaluateTuples.map(t => t.t1);
 }
 
 function param2tuples(p)
@@ -164,19 +171,19 @@ function ast2tuples(ast)
 {
   if (ast instanceof String)
   {
-    return [['$lit', ast.tag, String(ast)]];
+    return [['$lit', ast.tag, ast.toString()]];
   }
   if (ast instanceof Number)
   {
-    return [['$lit', ast.tag, Number(ast)]];
+    return [['$lit', ast.tag, ast.valueOf()]];
   }
   if (ast instanceof Boolean)
   {
-    return [['$lit', ast.tag, Boolean(ast)]];
+    return [['$lit', ast.tag, ast.valueOf()]];
   }
   if (ast instanceof Sym)
   {
-    return [['$id', ast.tag, String(ast)]];
+    return [['$id', ast.tag, ast.toString()]];
   }
   if (ast instanceof Pair)
   {
@@ -223,7 +230,7 @@ function ast2tuples(ast)
           const condTuples = ast2tuples(cond);
           const consTuples = ast2tuples(cons);
           const altTuples = ast2tuples(alt);
-          return [['$if', ast.tag, cond.tag, cons.tag, alt.tag], ...condTuples, consTuples, altTuples];
+          return [['$if', ast.tag, cond.tag, cons.tag, alt.tag], ...condTuples, ...consTuples, ...altTuples];
         }
         default:
         {
@@ -233,10 +240,16 @@ function ast2tuples(ast)
         }
       }
     }
+    else // not a special form
+    { // TODO: cloned from default case above
+      const ratorTuples = ast2tuples(car);
+      const argTuples = [...ast.cdr].flatMap(arg2tuples(ast.tag));
+      return [['$app', ast.tag, car.tag], ...ratorTuples, ...argTuples];
+    }
   }
   throw new Error(`cannot handle expression ${ast}`);
 }
 
 
-// console.log(greval(`(let ((x 123)) x)`));
+// console.log(greval(`(if #t 1 2)`));
 
