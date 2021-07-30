@@ -49,7 +49,7 @@ export default [
   [`(letrec ((f (lambda (x) (if x "done" (f #t))))) (f #f))`, "done"],
   [`(letrec ((f (lambda (x) (let ((v (= x 2))) (if v x (let ((u (+ x 1))) (f u))))))) (f 0))`, 2],
   // Scheme version: ^ 26 s unoptimized naive; 10 s semi-naive + opti
-  // rulespace: 0.308 s
+  // rulespace: 0.308 s (with lookup-root for prims)
 
   [`(letrec ((count (lambda (n) (let ((t (= n 0))) (if t 123 (let ((u (- n 1))) (let ((v (count u))) v))))))) (count 1))`, 123],
   [`(letrec ((fac (lambda (n) (let ((v (= n 0))) (if v 1 (let ((m (- n 1))) (let ((w (fac m))) (* n w)))))))) (fac 1))`, 1],
@@ -61,7 +61,61 @@ export default [
   [`x`], // fail
   [`(let ((f (lambda () f))) (f))`], // fail
   // Scheme version: ^ full: 339.4 s unoptimized naive; 69.6 s semi-naive + opti
-  // rulespace: 1 s
+  // rulespace: 1 s (with lookup-root for prims)
+
+  [`(let ((x (cons 1 2))) (car x))`, 1],
+  [`(let ((x (cons 1 2))) (cdr x))`, 2],
+  [`(let ((v (cons 2 3))) (let ((o (cons 1 v))) (let ((w (cdr o))) (car w))))`, 2],
+  [`(let ((v (cons 2 3))) (let ((o (cons v 1))) (let ((w (car o))) (car w))))`, 2],
+  [`(let ((v (cons 2 3))) (let ((o (cons 1 v))) (let ((v (cdr o))) (cdr v))))`, 3],
+  [`(let ((f (lambda (x) (cons x 2)))) (let ((p (f 3))) (car p)))`, 3],
+  [`(let ((f (lambda (x) (cons 1 x)))) (let ((p (f 3))) (cdr p)))`, 3],
+  [`(let ((f (lambda (x) (car x)))) (let ((p (cons 1 2))) (let ((v (f p))) v)))`, 1],
+  [`(let ((f (lambda (x) (cdr x)))) (let ((p (cons 1 2))) (let ((v (f p))) v)))`, 2],
+  [`(let ((p (let ((pp (cons 1 2))) (cons 3 pp)))) (let ((c (cdr p))) (car c)))`, 1],
+  [`(let ((p (let ((pp (cons 1 2))) (cons 3 pp)))) (let ((c (cdr p))) (cdr c)))`, 2],
+  [`(let ((p (cons 1 2)))
+      (let ((g (lambda (p)
+                (car p))))
+        (let ((f (lambda (p)
+                  (let ((pp (cdr p)))
+                    (g pp)))))
+          (let ((pp (cons 0 p)))
+            (f pp)))))`, 1],
+  [`(let ((g-car (lambda (p)
+                    (car p))))
+      (let ((g-cdr (lambda (p)
+                    (cdr p))))
+        (let ((p1 (cons 1 2)))
+          (let ((p2 (cons 9 p1)))
+            (let ((f (lambda (p g1 g2)
+                      (let ((ca (car p)))
+                        (let ((cd (cdr p)))
+                          (let ((xx (even? ca)))
+                            (if xx
+                                (g1 cd)
+                                (g2 cd))))))))
+              (f p2 g-car g-cdr))))))`, 2],
+  [`(let ((builder (lambda (c p x1 x2) 
+                      (let ((xx (even? c)))
+                          (if xx
+                              (cons x1 p)
+                              (cons x2 p))))))
+        (let ((p1 (builder 0 "()" 1 2)))    ; TODO support symbs and empty list some day?
+          (let ((p2 (builder 3 p1 4 5)))
+            (let ((p3 (builder 6 p2 7 8)))
+              (let ((c1 (cdr p3)))
+                (let ((c2 (cdr c1)))
+                  (let ((c3 (car c2)))
+                    c3)))))))`, 1],
+  // [`(let ((x 1))
+  //     (let ((u (set! x 9)))
+  //       (let ((p (cons x 1)))
+  //         (car p))))`, 9],
+
+
+  // (test-machine ')
+  // (test-machine ')
 ];
 
 
@@ -74,8 +128,3 @@ export default [
 // ;                                        (f0))))))) 9)
 
 
-// ; cons car cdr
-// ; (test-machine '(let ((x (if #t (cons 1 2) (cons 3 4)))) (car x)) 1)
-// ; (test-machine '(let ((x (if #t (cons 1 2) (cons 3 4)))) (cdr x)) 2)
-// ; (test-machine '(let ((x (if #f (cons 1 2) (cons 3 4)))) (car x)) 3)
-// ; (test-machine '(let ((x (if #f (cons 1 2) (cons 3 4)))) (cdr x)) 4)
