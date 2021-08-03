@@ -63,6 +63,7 @@ export default [
   // Scheme version: ^ full: 339.4 s unoptimized naive; 69.6 s semi-naive + opti
   // rulespace: 1 s (with lookup-root for prims)
 
+  // cons car cdr
   [`(let ((x (cons 1 2))) (car x))`, 1],
   [`(let ((x (cons 1 2))) (cdr x))`, 2],
   [`(let ((v (cons 2 3))) (let ((o (cons 1 v))) (let ((w (cdr o))) (car w))))`, 2],
@@ -108,23 +109,209 @@ export default [
                 (let ((c2 (cdr c1)))
                   (let ((c3 (car c2)))
                     c3)))))))`, 1],
-  // [`(let ((x 1))
-  //     (let ((u (set! x 9)))
-  //       (let ((p (cons x 1)))
-  //         (car p))))`, 9],
+
+  // set!
+  [`(let ((x 123)) (let ((u (set! x 456))) x))`, 456],
+  [`(let ((x 123)) (let ((u (set! x 456))) (let ((uu (set! x 789))) x)))`, 789],
+  [`(let ((x 123)) (let ((u (if x (set! x 456) (set! x 789)))) x))`, 456],
+  [`(let ((x 123)) (let ((u (if #t (set! x 456) (set! x 789)))) x))`, 456],
+  [`(let ((x 123)) (let ((u (if #f (set! x 456) (set! x 789)))) x))`, 789],
+  [`(let ((y 999)) (let ((x 123)) (let ((u (if x (set! y 456) (set! y 789)))) y)))`, 456],
+  [`(let ((x 123)) (let ((u (set! x #f))) (let ((uu (if x (set! x 456) (set! x 789)))) x)))`, 789],
+  [`(let ((x #t)) (let ((f (lambda () (set! x #f)))) (let ((u (f))) x)))`, false],
+  [`(let ((x #t)) (let ((g (lambda () (set! x #f)))) (let ((f (lambda (h) (h)))) (let ((u (f g))) x))))`, false],
+  [`(let ((x 2)) (let ((f (lambda (y) (let ((oldx x)) (let ((_ (set! x y))) oldx))))) (f 1)))`, 2],
+  [`(let ((x 1)) (let ((f (lambda (y) (let ((oldx x)) (let ((_ (set! x y))) oldx))))) (let ((__ (f "foo"))) (f 1))))`, "foo"],
+  [`(let ((x 1)) (let ((f (lambda (y) (let ((oldx x)) (let ((_ (set! x y))) oldx))))) (let ((_ (f 1))) (let ((__ (f "foo"))) (f 1)))))`, "foo"],
+  [`(let ((f (lambda (x) (let ((y (set! x "hoho"))) x)))) (f 1))`, "hoho"],
+  [`(let ((f (lambda (x) (let ((y (set! x "hehe"))) x)))) (let ((u (f 1))) (f 2)))`, "hehe"],
+  [`(let ((x 123)) (let ((f (lambda (y) y))) (let ((v (set! x 456))) (let ((u (f v))) x))))`, 456],
+  [`(let ((x 123)) (let ((f (lambda (x) x))) (let ((v (set! x 456))) (let ((u (f v))) x))))`, 456],
+  [`(let ((x 123)) (let ((f (lambda (x y) x))) (let ((v (set! x 456))) (let ((u (f v 789))) x))))`, 456],
+  [`(let ((x 123)) (let ((c (set! x 456))) (let ((u (if c 789 0))) x)))`, 456],
+  [`(let ((x 123)) (let ((c (set! x 456))) (let ((u (if c (set! x 789) (set! x 0)))) x)))`, 789],
+  [`(let ((x 1)) (let ((y (+ x 1))) (let ((c (= y 2))) (let ((z (if c (set! x 2) (set! x 3)))) (+ x y)))))`, 4],
+  [`(let ((x 123)) (let ((y (set! x 456))) (let ((u (let ((z (set! x 789))) 0))) x)))`, 789],
+  [`(let ((x 123)) (let ((y (set! x 456))) (let ((u (set! x 0))) (let ((uu (let ((z (set! x 789))) 0))) x))))`, 789],
+  [`(let ((x 123)) (let ((f (lambda () x))) (let ((u (set! x 456))) (f))))`, 456],
+  [`(let ((id (lambda (x) x)))
+      (let ((f (lambda (g) (g 3))))
+        (let ((u (set! id (lambda (x) 0))))
+          (f id))))`, 0],
+  [`(let ((g #f)) (let ((f (lambda (n) (let ((x n)) (let ((u (if g 123 (set! g (lambda (y) (set! x y)))))) (lambda () x))))))
+      (let ((f0 (f 0)))
+        (let ((u (g 9)))
+          (let ((f1 (f 1)))
+            (let ((u (f1)))
+              (f0)))))))`, 9],
+  [`(let ((x 1))
+      (let ((u (set! x 9))) 
+        (let ((p (cons x 1)))
+          (car p))))`, 9],
+
+          // ; set!  DO WE TEST set! with pair?: (set! x (cons 1 3))  
+]                    
 
 
-  // (test-machine ')
-  // (test-machine ')
-];
+//   ; set-car! set-cdr!
+// (test-machine '(let ((x (cons 1 2)))
+//                  (let ((u (set-car! x 9)))
+//                    (car x)))
+//               9)
 
+// (test-machine '(let ((x (cons 1 2)))
+//                  (let ((u (set-cdr! x 9)))
+//                    (cdr x)))
+//               9)
 
-// ; set!
-// ; (test-rules '(let ((g #f)) (let ((f (lambda (n) (let ((x n)) (let ((u (if g 123 (set! g (lambda (y) (set! x y)))))) (lambda () x))))))
-// ;                                (let ((f0 (f 0)))
-// ;                                  (let ((u (g 9)))
-// ;                                    (let ((f1 (f 1)))
-// ;                                      (let ((u (f1)))
-// ;                                        (f0))))))) 9)
+// (test-machine '(let ((o (cons 1 2))) (let ((v o)) (let ((u (set-car! v 3))) (car o)))) 3)
+// (test-machine '(let ((o (cons 1 2))) (let ((f (lambda () o))) (let ((u (set-car! o 3))) (let ((w (f))) (car w))))) 3)
+
+// (test-machine '(let ((yy (cons 1 2)))
+//                  (let ((y (cons 3 yy)))
+//                    (let ((x (cdr y)))
+//                      (let ((z (cdr y)))
+//                        (let ((u (set-car! z 123)))
+//                          (let ((uu (set-car! x 9)))
+//                            (let ((zz (cdr y)))
+//                              (car zz))))))))
+//               9)
+
+// (test-machine '(let ((y (cons 1 2)))
+//                  (let ((y (cons 3 y)))
+//                    (let ((x (cdr y)))
+//                      (let ((z (cdr y)))
+//                        (let ((u (set-car! z 123)))
+//                          (let ((u (set-car! x 9)))
+//                            (let ((z (cdr y)))
+//                              (car z))))))))
+//               9)
+              
+
+// (test-machine '(let ((x (cons 2 3)))
+//              (let ((y (cons 1 x)))
+//                (let ((m (cdr y)))
+//                  (let ((u (set-car! x 9)))
+//                    (car m)))))
+//               9)
+
+// (test-machine '(let ((z (cons 0 1)))
+//                  (let ((x (cons 2 3)))
+//                    (let ((y (cons 1 x)))
+//                      (let ((yy (cons 4 z)))
+//                        (let ((u (set! y yy)))
+//                          (let ((m (cdr y)))
+//                            (let ((uu (set-car! x 9)))
+//                              (car m))))))))
+//               0)
+
+// (test-machine '(let ((f (lambda (x)
+//                           (let ((x1 (car x)))
+//                             (let ((x2 (cdr x)))
+//                               (+ x1 x2))))))
+//                  (let ((cell (cons 2 3)))
+//                    (let ((u (set-car! cell 0)))
+//                      (f cell))))
+//               3)
+
+// (test-machine '(let ((x (cons 0 1)))
+//                  (let ((y (cons 2 3)))
+//                    (let ((u (set-cdr! x y)))
+//                      (let ((a (cdr x)))
+//                        (car a))))) 2)
+
+// (test-machine '(let ((x (cons 0 1)))
+//                   (let ((f (lambda (b)
+//                              (* b b))))
+//                     (let ((a (car x)))
+//                       (f a)))) 0)
+
+// (test-machine '(let ((x (cons 0 1)))
+//                 (let ((f (lambda (b)
+//                            (* b b))))
+//                   (let ((u (set-car! x 4)))
+//                     (let ((a (car x)))
+//                       (f a))))) 16)
+              
+// (test-machine '(let ((x (cons 0 1)))
+//                 (let ((f (lambda (x)
+//                            (* x x))))
+//                   (let ((u (set-car! x 4)))
+//                     (let ((x (car x)))
+//                       (f x))))) 16)
+
+// (test-machine '(let ((z (cons 1 2)))
+//                 (let ((y 3))
+//                   (let ((u (set! y z)))
+//                     (let ((x (cons 0 y)))
+//                       (let ((a (cdr x)))
+//                         (car a)))))) 1) 
+
+// (test-machine '(let ((z 3))
+//                 (let ((y (cons 1 2)))
+//                   (let ((u (set! y z)))
+//                     (let ((x (cons 0 y)))
+//                       (cdr x))))) 3)
+
+// (test-machine '(let ((z (cons 1 2)))
+//                 (let ((y 3))
+//                   (let ((u (set! y z)))
+//                   (let ((x (cons 0 y)))
+//                     (let ((v (set-cdr! x 9)))
+//                       (cdr x)))))) 9)
+
+// (test-machine '(let ((z (cons 1 2)))
+//                 (let ((y 3))
+//                     (let ((f (lambda (t)
+//                               (set! y t))))
+//                       (let ((u (f z)))
+//                         (let ((x (cons 0 y)))
+//                             (let ((a (cdr x)))
+//                               (car a))))))) 1)
+
+// (test-machine '(let ((p (cons 0 1)))
+//                  (let ((x (car p)))
+//                     (let ((u (set-car! p 9)))
+//                       x))) 0)
+
+// (test-machine '(let ((p (cons 0 1)))
+//                   (let ((v (set-car! p 9)))
+//                     (let ((x (car p)))
+//                       (let ((u (set-car! p 4)))
+//                         x)))) 9)
+
+// (test-machine '(let ((f (lambda (a b)
+//                            (cons a b))))
+//                   (let ((g (lambda (p)
+//                               p)))
+//                     (let ((h (lambda (p)
+//                                (set-car! p 9))))
+//                       (let ((p (f 0 1)))
+//                         (let ((q (g p)))
+//                           (let ((u (set-car! q 4)))
+//                             (let ((x1 (car p)))
+//                               (let ((v (h p)))
+//                                 (let ((x2 (car q)))
+//                                   (+ x1 x2)))))))))) 13) 
+
+// (test-machine '(let ((x (cons 0 1)))
+//                 (let ((y x))
+//                   (let ((u (set-cdr! x 9)))
+//                     (cdr x)))) 9)
+
+// (test-machine '(let ((x (cons 0 1)))
+//                 (let ((y x))
+//                   (let ((u (set-cdr! y 9)))
+//                     (cdr x)))) 9)
+
+// (test-machine '(let ((x (cons 0 1)))
+//                 (let ((y x))
+//                   (let ((u (set-cdr! x 9)))
+//                     (cdr y)))) 9)
+
+// (test-machine '(let ((x (cons 0 1)))
+//                 (let ((y x))
+//                   (let ((u (set-cdr! y 9)))
+//                     (cdr y)))) 9)
 
 

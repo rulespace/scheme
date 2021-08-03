@@ -15,6 +15,8 @@ const spec = `
 (rule [ast e] [$cons e _ _])
 (rule [ast e] [$car e _])
 (rule [ast e] [$cdr e _])
+; set!
+(rule [ast e] [$set e _ _])
 
 (rule [parent e p] [$let p e _ _])
 (rule [parent e p] [$let p _ e _])
@@ -33,6 +35,9 @@ const spec = `
 (rule [parent e p] [$cons p _ e])
 (rule [parent e p] [$car p e])
 (rule [parent e p] [$cdr p e])
+; set!
+(rule [parent e p] [$set p e _])
+(rule [parent e p] [$set p _ e])
 
 (rule [hasParent e] [parent e _])
 (rule [astroot e] [ast e] (not [hasParent e]))
@@ -58,6 +63,8 @@ const spec = `
 (rule [step e κ e’ κ’] [$cons e _ _] [reachable e κ] [cont e κ e’ κ’])
 (rule [step e κ e’ κ’] [$car e _ ] [reachable e κ] [cont e κ e’ κ’])
 (rule [step e κ e’ κ’] [$cdr e _ ] [reachable e κ] [cont e κ e’ κ’])
+; set!
+(rule [step e κ e’ κ’] [$set e _ _] [reachable e κ] [cont e κ e’ κ’])
 
 
 (rule [cont e_init κ e_body κ] [$let p _ e_init e_body] [parent e p] [reachable e κ])
@@ -71,23 +78,47 @@ const spec = `
 ;(rule [cont e_cons κ e’ κ’] [parent e_body p] [reachable e_body κ] [cont p κ e’ κ’])
 
 
-; backward var root lookup
+; var-root lookup
 (rule [binds e x] [param _ x e _])
 
-(rule [lookup_root x e_body κ [root e_init e_init κ]] [$let e e_id e_init e_body] [$id e_id x] [reachable e κ])
-(rule [lookup_root x e_init κ [root e_init e_init κ]] [$letrec e e_id e_init _] [$id e_id x] [reachable e κ])
-(rule [lookup_root x e_body κ [root e_init e_init κ]] [$letrec e e_id e_init e_body] [$id e_id x] [reachable e κ])
-(rule [lookup_root x e_init κ r] [lookup_root x p κ r] [$let p _ e_init _])
-(rule [lookup_root x e_body κ r] [lookup_root x p κ r] [$let p e_id _ e_body] (not [$id e_id x]))
-(rule [lookup_root x e_init κ r] [lookup_root x p κ r] [$letrec p e_id e_init _] (not [$id e_id x]))
-(rule [lookup_root x e_body κ r] [lookup_root x p κ r] [$letrec p e_id _ e_body] (not [$id e_id x]))
-(rule [lookup_root x e_cond κ r] [lookup_root x p κ r] [$if p e_cond _ _])
-(rule [lookup_root x e_then κ r] [lookup_root x p κ r] [$if p _ e_then _])
-(rule [lookup_root x e_else κ r] [lookup_root x p κ r] [$if p _ _ e_else])
-(rule [lookup_root x e_body κ’ [root e_rand e κ]] [$app e e_rator] [$lam e_lam e_body] [param e_param x e_lam i] [arg e_rand e i] [step e κ e_body κ’])
-(rule [lookup_root x e_body κ’ r] [$app e e_rator] [geval e_rator e κ [obj e_lam e_obj κ_obj]] [lookup_root x e_obj κ_obj r] (not [binds e_lam x]) [step e κ e_body κ’])
+(rule [lookup_var_root x e_body κ [root e_init e_init κ]] [$let e e_id e_init e_body] [$id e_id x] [reachable e κ])
+(rule [lookup_var_root x e_init κ [root e_init e_init κ]] [$letrec e e_id e_init _] [$id e_id x] [reachable e κ])
+(rule [lookup_var_root x e_body κ [root e_init e_init κ]] [$letrec e e_id e_init e_body] [$id e_id x] [reachable e κ])
+(rule [lookup_var_root x e_init κ r] [lookup_var_root x p κ r] [$let p _ e_init _])
+(rule [lookup_var_root x e_body κ r] [lookup_var_root x p κ r] [$let p e_id _ e_body] (not [$id e_id x]))
+(rule [lookup_var_root x e_init κ r] [lookup_var_root x p κ r] [$letrec p e_id e_init _] (not [$id e_id x]))
+(rule [lookup_var_root x e_body κ r] [lookup_var_root x p κ r] [$letrec p e_id _ e_body] (not [$id e_id x]))
+(rule [lookup_var_root x e_cond κ r] [lookup_var_root x p κ r] [$if p e_cond _ _])
+(rule [lookup_var_root x e_then κ r] [lookup_var_root x p κ r] [$if p _ e_then _])
+(rule [lookup_var_root x e_else κ r] [lookup_var_root x p κ r] [$if p _ _ e_else])
+(rule [lookup_var_root x e_body κ’ [root e_rand e κ]] [$app e e_rator] [$lam e_lam e_body] [param e_param x e_lam i] [arg e_rand e i] [step e κ e_body κ’])
+(rule [lookup_var_root x e_body κ’ r] [$app e e_rator] [geval e_rator e κ [obj e_lam e_obj κ_obj]] [lookup_var_root x e_obj κ_obj r] (not [binds e_lam x]) [step e κ e_body κ’])
+; cons car cdr ??? TODO
+; set!
+(rule [lookup_var_root x e_id κ r] [lookup_var_root x p κ r] [$set p e_id _])
+(rule [lookup_var_root x e_upd κ r] [lookup_var_root x p κ r] [$set p _ e_upd])
 
-; backward path root lookup
+
+; eval var root (only for set!)
+(rule [sets e] [$set e _ _])
+
+(rule [eval_var_root [root e_r e_rs κ_rs] e_rs κ_rs d]
+  [geval e_r e_rs κ_rs d] [$let _ _ e_r _]) ; init exp root
+(rule [eval_var_root [root e_r e_rs κ_rs] e_rs κ_rs d]
+  [geval e_r e_rs κ_rs d] [$letrec _ _ e_r _]) ; init exp root
+(rule [eval_var_root [root e_r e_rs κ_rs] e_rs κ_rs d]
+  [geval e_r e_rs κ_rs d] [arg e_r _ _]) ; arg root
+
+(rule [eval_var_root r e κ d]
+  [eval_var_root r ee κκ d] [step ee κκ e κ] (not [sets e]))
+(rule [eval_var_root r e κ d]
+  [eval_var_root r ee κκ d] [step ee κκ e κ] [$set e e_id _] [$id e_id x] [lookup_var_root x e κ rr] (!= r rr))
+      
+(rule [eval_var_root r e κ d]
+  [$set e e_id e_upd] [geval e_upd e κ d] [$id e_id x] [lookup_var_root x e κ r])
+        
+
+; path-root lookup
 (rule [lookup_path_root e_id "car" e_s κ_s [root e_car e_rs κ_rs]]
           [$id e_id _]
           [geval e_id e_s κ_s [obj e_cons e_rs κ_rs]]
@@ -110,6 +141,8 @@ const spec = `
 (rule [evaluated e_cdr e κ] [$cons e _ e_cdr] [reachable e κ])
 (rule [evaluated e_id e_car κ] [$car e_car e_id] [reachable e_car κ])
 (rule [evaluated e_id e_cdr κ] [$cdr e_cdr e_id] [reachable e_cdr κ])
+; set!
+(rule [evaluated e_upd e_set κ] [$set e_set _ e_upd] [reachable e_set κ])
 
 (rule [prim2 "+" + 2])
 (rule [prim2 "-" - 2])
@@ -119,7 +152,10 @@ const spec = `
 (rule [prim2 "even?" even? 1])
 
 (rule [geval e’ e κ d] [$lit e’ d] [evaluated e’ e κ])
-(rule [geval e’ e κ d] [$id e’ x] [evaluated e’ e κ] [lookup_root x e κ [root e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
+; without set!
+; (rule [geval e’ e κ d] [$id e’ x] [evaluated e’ e κ] [lookup_var_root x e κ [root e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
+; with set!
+(rule [geval e’ e κ d] [$id e’ x] [evaluated e’ e κ] [lookup_var_root x e κ [root e_r e_rs κ_rs]] [eval_var_root [root e_r e_rs κ_rs] e κ d])
 (rule [geval e’ e κ [prim proc arity]] [$id e’ x] [evaluated e’ e κ] [prim2 x proc arity])
 (rule [geval e’ e κ [obj e’ e κ]] [$lam e’ _] [evaluated e’ e κ])
 (rule [geval e e κ d] [$let e _ _ e_body] [reachable e κ] [geval e_body e_body κ d])
@@ -136,6 +172,8 @@ const spec = `
 (rule [geval e_cdr e_cdr κ d]
         [$cdr e_cdr e_id] [reachable e_cdr κ]
         [lookup_path_root e_id "cdr" e_cdr κ [root e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
+; set!
+(rule [geval e e κ "unspecified"] [$set e _ _] [reachable e κ]) ; TODO symbol support
 
 ; evaluator
 (rule [evaluate e d] [final e κ] [geval e e κ d])
@@ -167,7 +205,7 @@ export function greval(src)
   const evaluator = evaluatorCtr();
   evaluator.addTuples(programTuples.map(t => toModuleTuple(evaluator, t)));
 
-  // console.log([...evaluator.tuples()].join('\n'));
+  console.log([...evaluator.tuples()].join('\n'));
 
   const astrootTuples = [...evaluator.tuples()].filter(t => t.constructor.name === 'astroot');
   if (astrootTuples.length !== 1)
@@ -189,7 +227,7 @@ function param2tuples(p)
   {
     if (param instanceof Sym)
     {
-      return [['param', param.tag, param.name, p, i]];
+      return [['param', param.tag, param.name, p, i]]; // no id in sight (see 'when to name-tuple')
     }
     throw new Error(`cannot handle param ${param}`);
   }
@@ -243,7 +281,7 @@ function ast2tuples(ast)
           const name = binding.car.car;
           const init = binding.car.cdr.car;
           const body = ast.cdr.cdr.car;
-          const nameTuples = ast2tuples(name);
+          const nameTuples = ast2tuples(name); // TODO: when to name-tuple or not; currently: not for params
           const initTuples = ast2tuples(init);
           const bodyTuples = ast2tuples(body);
           return [['$let', ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
@@ -269,6 +307,7 @@ function ast2tuples(ast)
           const altTuples = ast2tuples(alt);
           return [['$if', ast.tag, cond.tag, cons.tag, alt.tag], ...condTuples, ...consTuples, ...altTuples];
         }
+
         case "cons":
         {
           const car = ast.cdr.car;
@@ -289,7 +328,17 @@ function ast2tuples(ast)
           const pairTuples = ast2tuples(pair);
           return [['$cdr', ast.tag, pair.tag], ...pairTuples];
         }
-        default:
+
+        case "set!":
+        {
+          const name = ast.cdr.car;
+          const update = ast.cdr.cdr.car;
+          const nameTuples = ast2tuples(name);
+          const updateTuples = ast2tuples(update);
+          return [['$set', ast.tag, name.tag, update.tag], ...nameTuples, ...updateTuples];         
+        }
+
+        default: // app
         {
           const ratorTuples = ast2tuples(car);
           const argTuples = [...ast.cdr].flatMap(arg2tuples(ast.tag));
@@ -324,5 +373,10 @@ function ast2tuples(ast)
 //                   (g2 cd))))))))
 //           (f p2 g-car g-cdr))))))`));
 
-console.log(greval(`(< 2 5)`));
+console.log(greval(`
+(let ((x 1))
+  (let ((u (set! x 9))) 
+    (let ((p (cons x 1)))
+      (car p))))
+`));
           
