@@ -17,6 +17,9 @@ const spec = `
 (rule [ast e] [$cdr e _])
 ; set!
 (rule [ast e] [$set e _ _])
+; set-cxr!
+(rule [ast e] [$setcar e _ _])
+(rule [ast e] [$setcdr e _ _])
 
 (rule [parent e p] [$let p e _ _])
 (rule [parent e p] [$let p _ e _])
@@ -38,6 +41,11 @@ const spec = `
 ; set!
 (rule [parent e p] [$set p e _])
 (rule [parent e p] [$set p _ e])
+; set-cxr!
+(rule [parent e p] [$setcar p e _])
+(rule [parent e p] [$setcar p _ e])
+(rule [parent e p] [$setcdr p e _])
+(rule [parent e p] [$setcdr p _ e])
 
 (rule [hasParent e] [parent e _])
 (rule [astroot e] [ast e] (not [hasParent e]))
@@ -65,7 +73,9 @@ const spec = `
 (rule [step e κ e’ κ’] [$cdr e _ ] [reachable e κ] [cont e κ e’ κ’])
 ; set!
 (rule [step e κ e’ κ’] [$set e _ _] [reachable e κ] [cont e κ e’ κ’])
-
+; set-cxr!
+(rule [step e κ e’ κ’] [$setcar e _ _] [reachable e κ] [cont e κ e’ κ’])
+(rule [step e κ e’ κ’] [$setcdr e _ _] [reachable e κ] [cont e κ e’ κ’])
 
 (rule [cont e_init κ e_body κ] [$let p _ e_init e_body] [parent e p] [reachable e κ])
 (rule [cont e_init κ e_body κ] [$letrec p _ e_init e_body] [parent e p] [reachable e κ])
@@ -97,6 +107,11 @@ const spec = `
 ; set!
 (rule [lookup_var_root x e_id κ r] [lookup_var_root x p κ r] [$set p e_id _])
 (rule [lookup_var_root x e_upd κ r] [lookup_var_root x p κ r] [$set p _ e_upd])
+; set-cxr!
+(rule [lookup_var_root x e_id κ r] [lookup_var_root x p κ r] [$setcar p e_id _])
+(rule [lookup_var_root x e_upd κ r] [lookup_var_root x p κ r] [$setcar p _ e_upd])
+(rule [lookup_var_root x e_id κ r] [lookup_var_root x p κ r] [$setcdr p e_id _])
+(rule [lookup_var_root x e_upd κ r] [lookup_var_root x p κ r] [$setcdr p _ e_upd])
 
 
 ; eval var root (only for set!)
@@ -118,16 +133,37 @@ const spec = `
   [$set e e_id e_upd] [geval e_upd e κ d] [$id e_id x] [lookup_var_root x e κ r])
         
 
-; path-root lookup
-(rule [lookup_path_root e_id "car" e_s κ_s [root e_car e_rs κ_rs]]
+; path roots
+(rule [lookup_path_root e_id "car" e_s κ_s [proot e_car e_rs κ_rs]]
           [$id e_id _]
           [geval e_id e_s κ_s [obj e_cons e_rs κ_rs]]
           [$cons e_cons e_car _])
-(rule [lookup_path_root e_id "cdr" e_s κ_s [root e_cdr e_rs κ_rs]]
+(rule [lookup_path_root e_id "cdr" e_s κ_s [proot e_cdr e_rs κ_rs]]
           [$id e_id _]
           [geval e_id e_s κ_s [obj e_cons e_rs κ_rs]]
           [$cons e_cons _ e_cdr])
-          
+
+; eval path root (only for set-cxr!)
+(rule [setcxr e] [$setcar e _ _])
+(rule [setcxr e] [$setcdr e _ _])
+
+(rule [eval_path_root [proot e_r e_rs κ_rs] e_rs κ_rs d]
+  [geval e_r e_rs κ_rs d] [$cons e_rs e_r _]) ; car in cons root
+(rule [eval_path_root [proot e_r e_rs κ_rs] e_rs κ_rs d]
+  [geval e_r e_rs κ_rs d] [$cons e_rs _ e_r]) ; cdr in cons root
+
+(rule [eval_path_root r e κ d]
+  [eval_path_root r ee κκ d] [step ee κκ e κ] (not [setcxr e]))
+(rule [eval_path_root r e κ d]
+  [eval_path_root r ee κκ d] [step ee κκ e κ] [$setcar e e_id _] [lookup_path_root e_id "car" e κ rr] (!= r rr))
+(rule [eval_path_root r e κ d]
+  [eval_path_root r ee κκ d] [step ee κκ e κ] [$setcdr e e_id _] [lookup_path_root e_id "cdr" e κ rr] (!= r rr))
+
+(rule [eval_path_root r e κ d]
+  [$setcar e e_id e_upd] [geval e_upd e κ d] [lookup_path_root e_id "car" e κ r])
+(rule [eval_path_root r e κ d]
+  [$setcdr e e_id e_upd] [geval e_upd e κ d] [lookup_path_root e_id "cdr" e κ r])
+        
 
 ; graph evaluator
 (rule [evaluated e e κ] [$lit e _] [reachable e κ])
@@ -143,6 +179,12 @@ const spec = `
 (rule [evaluated e_id e_cdr κ] [$cdr e_cdr e_id] [reachable e_cdr κ])
 ; set!
 (rule [evaluated e_upd e_set κ] [$set e_set _ e_upd] [reachable e_set κ])
+; set-cxr!
+(rule [evaluated e_id e_setcar κ] [$setcar e_setcar e_id _] [reachable e_setcar κ])
+(rule [evaluated e_upd e_setcar κ] [$setcar e_setcar _ e_upd] [reachable e_setcar κ])
+(rule [evaluated e_id e_setcdr κ] [$setcdr e_setcdr e_id _] [reachable e_setcdr κ])
+(rule [evaluated e_upd e_setcdr κ] [$setcdr e_setcdr _ e_upd] [reachable e_setcdr κ])
+
 
 (rule [prim2 "+" + 2])
 (rule [prim2 "-" - 2])
@@ -166,12 +208,22 @@ const spec = `
 (rule [geval e e κ d] [$if e _ _ _] [step e κ e_thenelse κ] [geval e_thenelse e_thenelse κ d])
 ; cons car cdr
 (rule [geval e_cons e κ [obj e_cons e κ]] [$cons e_cons _ _] [reachable e κ])
+; without set-cxr!
+;(rule [geval e_car e_car κ d]
+;        [$car e_car e_id] [reachable e_car κ]
+;        [lookup_path_root e_id "car" e_car κ [proot e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
+;(rule [geval e_cdr e_cdr κ d]
+;        [$cdr e_cdr e_id] [reachable e_cdr κ]
+;        [lookup_path_root e_id "cdr" e_cdr κ [proot e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
+; with set-cxr!
 (rule [geval e_car e_car κ d]
-        [$car e_car e_id] [reachable e_car κ]
-        [lookup_path_root e_id "car" e_car κ [root e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
+  [$car e_car e_id] [reachable e_car κ]
+  [lookup_path_root e_id "car" e_car κ r] [eval_path_root r e_car κ d])
 (rule [geval e_cdr e_cdr κ d]
-        [$cdr e_cdr e_id] [reachable e_cdr κ]
-        [lookup_path_root e_id "cdr" e_cdr κ [root e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
+  [$cdr e_cdr e_id] [reachable e_cdr κ]
+  [lookup_path_root e_id "cdr" e_cdr κ r] [eval_path_root r e_cdr κ d])
+
+
 ; set!
 (rule [geval e e κ "unspecified"] [$set e _ _] [reachable e κ]) ; TODO symbol support
 
@@ -205,7 +257,7 @@ export function greval(src)
   const evaluator = evaluatorCtr();
   evaluator.addTuples(programTuples.map(t => toModuleTuple(evaluator, t)));
 
-  console.log([...evaluator.tuples()].join('\n'));
+  // console.log([...evaluator.tuples()].join('\n'));
 
   const astrootTuples = [...evaluator.tuples()].filter(t => t.constructor.name === 'astroot');
   if (astrootTuples.length !== 1)
@@ -338,6 +390,24 @@ function ast2tuples(ast)
           return [['$set', ast.tag, name.tag, update.tag], ...nameTuples, ...updateTuples];         
         }
 
+        case "set-car!":
+        {
+          const name = ast.cdr.car;
+          const update = ast.cdr.cdr.car;
+          const nameTuples = ast2tuples(name);
+          const updateTuples = ast2tuples(update);
+          return [['$setcar', ast.tag, name.tag, update.tag], ...nameTuples, ...updateTuples];         
+        }
+        case "set-cdr!":
+        {
+          const name = ast.cdr.car;
+          const update = ast.cdr.cdr.car;
+          const nameTuples = ast2tuples(name);
+          const updateTuples = ast2tuples(update);
+          return [['$setcdr', ast.tag, name.tag, update.tag], ...nameTuples, ...updateTuples];         
+        }
+
+
         default: // app
         {
           const ratorTuples = ast2tuples(car);
@@ -358,25 +428,5 @@ function ast2tuples(ast)
 
 
 // console.log(greval(`
-// (let ((g-car (lambda (p)
-//                 (car p))))
-//   (let ((g-cdr (lambda (p)
-//                   (cdr p))))
-//     (let ((p1 (cons 1 2)))
-//       (let ((p2 (cons 9 p1)))
-//         (let ((f (lambda (p g1 g2)
-//           (let ((ca (car p)))
-//             (let ((cd (cdr p)))
-//               (let ((xx (even? ca)))
-//                 (if xx
-//                   (g1 cd)
-//                   (g2 cd))))))))
-//           (f p2 g-car g-cdr))))))`));
-
-console.log(greval(`
-(let ((x 1))
-  (let ((u (set! x 9))) 
-    (let ((p (cons x 1)))
-      (car p))))
-`));
-          
+// (let ((x (cons 1 2))) (let ((u (set-car! x 22))) (cdr x)))
+// `));
