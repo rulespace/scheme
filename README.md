@@ -14,6 +14,7 @@ npm link
 cd ..
 cd rulespace
 npm link common
+npm link
 cd ..
 cd scheme
 npm link rulespace
