@@ -63,10 +63,10 @@ const spec = `
 (rule [step e κ e’ κ’] [$lam e _] [reachable e κ] [cont e κ e’ κ’])
 (rule [step e κ e_init κ] [$let e _ e_init _] [reachable e κ])
 (rule [step e κ e_init κ] [$letrec e _ e_init _] [reachable e κ])
-(rule [step e κ e_body [call e κ]] [$app e e_rator] [reachable e κ] [geval e_rator e κ [obj e_lam _ _]] [$lam e_lam e_body])
-(rule [step e κ e’ κ’] [$app e e_rator] [reachable e κ] [geval e_rator e κ [prim _ _]] [cont e κ e’ κ’])
-(rule [step e κ e_then κ] [$if e e_cond e_then _] [reachable e κ] [geval e_cond e κ d] (!= d #f))
-(rule [step e κ e_else κ] [$if e e_cond _ e_else] [reachable e κ] [geval e_cond e κ d] (= d #f))
+(rule [step e κ e_body [call e κ]] [$app e e_rator] [reachable e κ] [greval e_rator e κ [obj e_lam _ _]] [$lam e_lam e_body])
+(rule [step e κ e’ κ’] [$app e e_rator] [reachable e κ] [greval e_rator e κ [prim _ _]] [cont e κ e’ κ’])
+(rule [step e κ e_then κ] [$if e e_cond e_then _] [reachable e κ] [greval e_cond e κ d] (!= d #f))
+(rule [step e κ e_else κ] [$if e e_cond _ e_else] [reachable e κ] [greval e_cond e κ d] (= d #f))
 ; cons car cdr
 (rule [step e κ e’ κ’] [$cons e _ _] [reachable e κ] [cont e κ e’ κ’])
 (rule [step e κ e’ κ’] [$car e _ ] [reachable e κ] [cont e κ e’ κ’])
@@ -102,7 +102,7 @@ const spec = `
 (rule [lookup_var_root x e_then κ r] [lookup_var_root x p κ r] [$if p _ e_then _])
 (rule [lookup_var_root x e_else κ r] [lookup_var_root x p κ r] [$if p _ _ e_else])
 (rule [lookup_var_root x e_body κ’ [root e_rand e κ]] [$app e e_rator] [$lam e_lam e_body] [param e_param x e_lam i] [arg e_rand e i] [step e κ e_body κ’])
-(rule [lookup_var_root x e_body κ’ r] [$app e e_rator] [geval e_rator e κ [obj e_lam e_obj κ_obj]] [lookup_var_root x e_obj κ_obj r] (not [binds e_lam x]) [step e κ e_body κ’])
+(rule [lookup_var_root x e_body κ’ r] [$app e e_rator] [greval e_rator e κ [obj e_lam e_obj κ_obj]] [lookup_var_root x e_obj κ_obj r] (not [binds e_lam x]) [step e κ e_body κ’])
 ; cons car cdr ??? TODO
 ; set!
 (rule [lookup_var_root x e_id κ r] [lookup_var_root x p κ r] [$set p e_id _])
@@ -118,11 +118,11 @@ const spec = `
 (rule [sets e] [$set e _ _])
 
 (rule [eval_var_root [root e_r e_rs κ_rs] e_rs κ_rs d]
-  [geval e_r e_rs κ_rs d] [$let _ _ e_r _]) ; init exp root
+  [greval e_r e_rs κ_rs d] [$let _ _ e_r _]) ; init exp root
 (rule [eval_var_root [root e_r e_rs κ_rs] e_rs κ_rs d]
-  [geval e_r e_rs κ_rs d] [$letrec _ _ e_r _]) ; init exp root
+  [greval e_r e_rs κ_rs d] [$letrec _ _ e_r _]) ; init exp root
 (rule [eval_var_root [root e_r e_rs κ_rs] e_rs κ_rs d]
-  [geval e_r e_rs κ_rs d] [arg e_r _ _]) ; arg root
+  [greval e_r e_rs κ_rs d] [arg e_r _ _]) ; arg root
 
 (rule [eval_var_root r e κ d]
   [eval_var_root r e’ κ’ d] [step e’ κ’ e κ] (not [sets e]))
@@ -130,17 +130,17 @@ const spec = `
   [eval_var_root r e’ κ’ d] [step e’ κ’ e κ] [$set e e_id _] [$id e_id x] [lookup_var_root x e κ r’] (!= r r’))
       
 (rule [eval_var_root r e κ d]
-  [$set e e_id e_upd] [geval e_upd e κ d] [$id e_id x] [lookup_var_root x e κ r])
+  [$set e e_id e_upd] [greval e_upd e κ d] [$id e_id x] [lookup_var_root x e κ r])
         
 
 ; path roots
 (rule [lookup_path_root e_id "car" e_s κ_s [root e_car e_rs κ_rs]]
           [$id e_id _]
-          [geval e_id e_s κ_s [obj e_cons e_rs κ_rs]]
+          [greval e_id e_s κ_s [obj e_cons e_rs κ_rs]]
           [$cons e_cons e_car _])
 (rule [lookup_path_root e_id "cdr" e_s κ_s [root e_cdr e_rs κ_rs]]
           [$id e_id _]
-          [geval e_id e_s κ_s [obj e_cons e_rs κ_rs]]
+          [greval e_id e_s κ_s [obj e_cons e_rs κ_rs]]
           [$cons e_cons _ e_cdr])
 
 ; eval path root (only for set-cxr!)
@@ -148,9 +148,9 @@ const spec = `
 (rule [setcxr e] [$setcdr e _ _])
 
 (rule [eval_path_root [root e_r e_rs κ_rs] e_rs κ_rs d]
-  [geval e_r e_rs κ_rs d] [$cons e_rs e_r _]) ; car in cons root
+  [greval e_r e_rs κ_rs d] [$cons e_rs e_r _]) ; car in cons root
 (rule [eval_path_root [root e_r e_rs κ_rs] e_rs κ_rs d]
-  [geval e_r e_rs κ_rs d] [$cons e_rs _ e_r]) ; cdr in cons root
+  [greval e_r e_rs κ_rs d] [$cons e_rs _ e_r]) ; cdr in cons root
 
 (rule [eval_path_root r e κ d]
   [eval_path_root r e’ κ’ d] [step e’ κ’ e κ] (not [setcxr e]))
@@ -160,9 +160,9 @@ const spec = `
   [eval_path_root r e’ κ’ d] [step e’ κ’ e κ] [$setcdr e e_id _] [lookup_path_root e_id "cdr" e κ r’] (!= r r’))
 
 (rule [eval_path_root r e κ d]
-  [$setcar e e_id e_upd] [geval e_upd e κ d] [lookup_path_root e_id "car" e κ r])
+  [$setcar e e_id e_upd] [greval e_upd e κ d] [lookup_path_root e_id "car" e κ r])
 (rule [eval_path_root r e κ d]
-  [$setcdr e e_id e_upd] [geval e_upd e κ d] [lookup_path_root e_id "cdr" e κ r])
+  [$setcdr e e_id e_upd] [greval e_upd e κ d] [lookup_path_root e_id "cdr" e κ r])
         
 
 ; graph evaluator
@@ -193,42 +193,42 @@ const spec = `
 (rule [prim2 "<" < 2])
 (rule [prim2 "even?" even? 1])
 
-(rule [geval e’ e κ d] [$lit e’ d] [evaluated e’ e κ])
+(rule [greval e’ e κ d] [$lit e’ d] [evaluated e’ e κ])
 ; without set!
-; (rule [geval e’ e κ d] [$id e’ x] [evaluated e’ e κ] [lookup_var_root x e κ [root e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
+; (rule [greval e’ e κ d] [$id e’ x] [evaluated e’ e κ] [lookup_var_root x e κ [root e_r e_rs κ_rs]] [greval e_r e_rs κ_rs d])
 ; with set!
-(rule [geval e’ e κ d] [$id e’ x] [evaluated e’ e κ] [lookup_var_root x e κ [root e_r e_rs κ_rs]] [eval_var_root [root e_r e_rs κ_rs] e κ d])
-(rule [geval e’ e κ [prim proc arity]] [$id e’ x] [evaluated e’ e κ] [prim2 x proc arity])
-(rule [geval e’ e κ [obj e’ e κ]] [$lam e’ _] [evaluated e’ e κ])
-(rule [geval e e κ d] [$let e _ _ e_body] [reachable e κ] [geval e_body e_body κ d])
-(rule [geval e e κ d] [$letrec e _ _ e_body] [reachable e κ] [geval e_body e_body κ d])
-(rule [geval e e κ d] [$app e _] [step e κ e_body κ’] [$lam _ e_body] [geval e_body e_body κ’ d])
-(rule [geval e e κ d] [$app e e_rator] [reachable e κ] [geval e_rator e κ [prim proc 1]] [arg e1 e 0] [geval e1 e κ d1] (:= d (proc d1)))
-(rule [geval e e κ d] [$app e e_rator] [reachable e κ] [geval e_rator e κ [prim proc 2]] [arg e1 e 0] [geval e1 e κ d1] [arg e2 e 1] [geval e2 e κ d2] (:= d (proc d1 d2)))
-(rule [geval e e κ d] [$if e _ _ _] [step e κ e_thenelse κ] [geval e_thenelse e_thenelse κ d])
+(rule [greval e’ e κ d] [$id e’ x] [evaluated e’ e κ] [lookup_var_root x e κ [root e_r e_rs κ_rs]] [eval_var_root [root e_r e_rs κ_rs] e κ d])
+(rule [greval e’ e κ [prim proc arity]] [$id e’ x] [evaluated e’ e κ] [prim2 x proc arity])
+(rule [greval e’ e κ [obj e’ e κ]] [$lam e’ _] [evaluated e’ e κ])
+(rule [greval e e κ d] [$let e _ _ e_body] [reachable e κ] [greval e_body e_body κ d])
+(rule [greval e e κ d] [$letrec e _ _ e_body] [reachable e κ] [greval e_body e_body κ d])
+(rule [greval e e κ d] [$app e _] [step e κ e_body κ’] [$lam _ e_body] [greval e_body e_body κ’ d])
+(rule [greval e e κ d] [$app e e_rator] [reachable e κ] [greval e_rator e κ [prim proc 1]] [arg e1 e 0] [greval e1 e κ d1] (:= d (proc d1)))
+(rule [greval e e κ d] [$app e e_rator] [reachable e κ] [greval e_rator e κ [prim proc 2]] [arg e1 e 0] [greval e1 e κ d1] [arg e2 e 1] [greval e2 e κ d2] (:= d (proc d1 d2)))
+(rule [greval e e κ d] [$if e _ _ _] [step e κ e_thenelse κ] [greval e_thenelse e_thenelse κ d])
 ; cons car cdr
-(rule [geval e_cons e κ [obj e_cons e κ]] [$cons e_cons _ _] [reachable e κ])
+(rule [greval e_cons e κ [obj e_cons e κ]] [$cons e_cons _ _] [reachable e κ])
 ; without set-cxr!
-;(rule [geval e_car e_car κ d]
+;(rule [greval e_car e_car κ d]
 ;        [$car e_car e_id] [reachable e_car κ]
-;        [lookup_path_root e_id "car" e_car κ [root e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
-;(rule [geval e_cdr e_cdr κ d]
+;        [lookup_path_root e_id "car" e_car κ [root e_r e_rs κ_rs]] [greval e_r e_rs κ_rs d])
+;(rule [greval e_cdr e_cdr κ d]
 ;        [$cdr e_cdr e_id] [reachable e_cdr κ]
-;        [lookup_path_root e_id "cdr" e_cdr κ [root e_r e_rs κ_rs]] [geval e_r e_rs κ_rs d])
+;        [lookup_path_root e_id "cdr" e_cdr κ [root e_r e_rs κ_rs]] [greval e_r e_rs κ_rs d])
 ; with set-cxr!
-(rule [geval e_car e_car κ d]
+(rule [greval e_car e_car κ d]
   [$car e_car e_id] [reachable e_car κ]
   [lookup_path_root e_id "car" e_car κ r] [eval_path_root r e_car κ d])
-(rule [geval e_cdr e_cdr κ d]
+(rule [greval e_cdr e_cdr κ d]
   [$cdr e_cdr e_id] [reachable e_cdr κ]
   [lookup_path_root e_id "cdr" e_cdr κ r] [eval_path_root r e_cdr κ d])
 
 
 ; set!
-(rule [geval e e κ "unspecified"] [$set e _ _] [reachable e κ]) ; TODO symbol support
+(rule [greval e e κ "unspecified"] [$set e _ _] [reachable e κ]) ; TODO symbol support
 
 ; evaluator
-(rule [evaluate e d] [final e κ] [geval e e κ d])
+(rule [evaluate e d] [final e κ] [greval e e κ d])
 `;
 
 const evaluatorSexpParser = new SexpParser();
