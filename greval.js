@@ -1,4 +1,4 @@
-import { SexpParser, sexp2rsp, rsp2js } from 'rulespace';
+import { str2sexp, sexp2rsp, rsp2js } from 'rulespace';
 import { SchemeParser, Sym, Pair } from './sexp-reader.js';
 
 const spec = `
@@ -231,8 +231,7 @@ const spec = `
 (rule [evaluate e d] [final [state e κ]] [greval e [state e κ] d])
 `;
 
-const evaluatorSexpParser = new SexpParser();
-const evaluatorSexp = evaluatorSexpParser.parse(spec);
+const evaluatorSexp = str2sexp(spec);
 const evaluatorRsp = sexp2rsp(evaluatorSexp);
 const evaluatorSrc = rsp2js(evaluatorRsp);
 const evaluatorCtr = new Function(evaluatorSrc);
