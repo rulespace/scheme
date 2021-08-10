@@ -1,4 +1,4 @@
-import { str2sexp, sexp2rsp, rsp2js } from 'rulespace';
+import { compileToConstructor, instance2dot } from 'rulespace';
 import { SchemeParser, Sym, Pair } from './sexp-reader.js';
 
 const spec = `
@@ -21,10 +21,10 @@ const spec = `
 (rule [ast e] [$setcar e _ _])
 (rule [ast e] [$setcdr e _ _])
 
-(rule [parent e p] [$let p e _ _])
+;(rule [parent e p] [$let p e _ _])
 (rule [parent e p] [$let p _ e _])
 (rule [parent e p] [$let p _ _ e])
-(rule [parent e p] [$letrec p e _ _])
+;(rule [parent e p] [$letrec p e _ _])
 (rule [parent e p] [$letrec p _ e _])
 (rule [parent e p] [$letrec p _ _ e])
 (rule [parent e p] [$lam p e])
@@ -39,7 +39,7 @@ const spec = `
 (rule [parent e p] [$car p e])
 (rule [parent e p] [$cdr p e])
 ; set!
-(rule [parent e p] [$set p e _])
+;(rule [parent e p] [$set p e _])
 (rule [parent e p] [$set p _ e])
 ; set-cxr!
 (rule [parent e p] [$setcar p e _])
@@ -91,13 +91,13 @@ const spec = `
 ; var-root lookup
 (rule [binds e x] [param _ x e _])
 
-(rule [lookup_var_root x [state e_body κ] [root e_init [state e_init κ]]] [$let e e_id e_init e_body] [$id e_id x] [reachable [state e κ]])
-(rule [lookup_var_root x [state e_init κ] [root e_init [state e_init κ]]] [$letrec e e_id e_init _] [$id e_id x] [reachable [state e κ]])
-(rule [lookup_var_root x [state e_body κ] [root e_init [state e_init κ]]] [$letrec e e_id e_init e_body] [$id e_id x] [reachable [state e κ]])
+(rule [lookup_var_root x [state e_body κ] [root e_init [state e_init κ]]] [$let e x e_init e_body] [reachable [state e κ]])
+(rule [lookup_var_root x [state e_init κ] [root e_init [state e_init κ]]] [$letrec e x e_init _] [reachable [state e κ]])
+(rule [lookup_var_root x [state e_body κ] [root e_init [state e_init κ]]] [$letrec e x e_init e_body] [reachable [state e κ]])
 (rule [lookup_var_root x [state e_init κ] r] [lookup_var_root x [state p κ] r] [$let p _ e_init _])
-(rule [lookup_var_root x [state e_body κ] r] [lookup_var_root x [state p κ] r] [$let p e_id _ e_body] (not [$id e_id x]))
-(rule [lookup_var_root x [state e_init κ] r] [lookup_var_root x [state p κ] r] [$letrec p e_id e_init _] (not [$id e_id x]))
-(rule [lookup_var_root x [state e_body κ] r] [lookup_var_root x [state p κ] r] [$letrec p e_id _ e_body] (not [$id e_id x]))
+(rule [lookup_var_root x [state e_body κ] r] [lookup_var_root x [state p κ] r] [$let p x’ _ e_body] (!= x x’))
+(rule [lookup_var_root x [state e_init κ] r] [lookup_var_root x [state p κ] r] [$letrec p x’ e_init _] (!= x x’))
+(rule [lookup_var_root x [state e_body κ] r] [lookup_var_root x [state p κ] r] [$letrec p x’ _ e_body] (!= x x’))
 (rule [lookup_var_root x [state e_cond κ] r] [lookup_var_root x [state p κ] r] [$if p e_cond _ _])
 (rule [lookup_var_root x [state e_then κ] r] [lookup_var_root x [state p κ] r] [$if p _ e_then _])
 (rule [lookup_var_root x [state e_else κ] r] [lookup_var_root x [state p κ] r] [$if p _ _ e_else])
@@ -105,7 +105,7 @@ const spec = `
 (rule [lookup_var_root x [state e_body κ’] r] [$app e e_rator] [greval e_rator [state e κ] [obj e_lam [state e_obj κ_obj]]] [lookup_var_root x [state e_obj κ_obj] r] (not [binds e_lam x]) [step [state e κ] [state e_body κ’]])
 ; cons car cdr ??? TODO
 ; set!
-(rule [lookup_var_root x [state e_id κ] r] [lookup_var_root x [state p κ] r] [$set p e_id _])
+;(rule [lookup_var_root x [state e_id κ] r] [lookup_var_root x [state p κ] r] [$set p e_id _])
 (rule [lookup_var_root x [state e_upd κ] r] [lookup_var_root x [state p κ] r] [$set p _ e_upd])
 ; set-cxr!
 (rule [lookup_var_root x [state e_id κ] r] [lookup_var_root x [state p κ] r] [$setcar p e_id _])
@@ -127,10 +127,10 @@ const spec = `
 (rule [eval_var_root r [state e κ] d]
   [eval_var_root r s’ d] [step s’ [state e κ]] (not [sets e]))
 (rule [eval_var_root r [state e κ] d]
-  [eval_var_root r s’ d] [step s’ [state e κ]] [$set e e_id _] [$id e_id x] [lookup_var_root x [state e κ] r’] (!= r r’))
+  [eval_var_root r s’ d] [step s’ [state e κ]] [$set e x _] [lookup_var_root x [state e κ] r’] (!= r r’))
       
 (rule [eval_var_root r [state e κ] d]
-  [$set e e_id e_upd] [greval e_upd [state e κ] d] [$id e_id x] [lookup_var_root x [state e κ] r])
+  [$set e x e_upd] [greval e_upd [state e κ] d] [lookup_var_root x [state e κ] r])
         
 
 ; path roots
@@ -231,10 +231,7 @@ const spec = `
 (rule [evaluate e d] [final [state e κ]] [greval e [state e κ] d])
 `;
 
-const evaluatorSexp = str2sexp(spec);
-const evaluatorRsp = sexp2rsp(evaluatorSexp);
-const evaluatorSrc = rsp2js(evaluatorRsp);
-const evaluatorCtr = new Function(evaluatorSrc);
+const evaluatorCtr = compileToConstructor(spec, {debug:false});
 
 function toModuleTuple(module, genericTuple)
 {
@@ -251,12 +248,13 @@ export function greval(src)
 {
   const ast = new SchemeParser().parse(src);
   const programTuples = ast2tuples(ast.car); 
-  // console.log(programTuples.join('\n'));
+  //  console.log(programTuples.join('\n'));
 
   const evaluator = evaluatorCtr();
   evaluator.addTuples(programTuples.map(t => toModuleTuple(evaluator, t)));
 
   // console.log([...evaluator.tuples()].join('\n'));
+  // console.log(instance2dot(evaluator));
 
   const astrootTuples = [...evaluator.tuples()].filter(t => t.constructor.name === 'astroot');
   if (astrootTuples.length !== 1)
@@ -329,24 +327,24 @@ function ast2tuples(ast)
         case "let":
         {
           const binding = ast.cdr.car;
-          const name = binding.car.car;
+          const name = binding.car.car.name;
           const init = binding.car.cdr.car;
           const body = ast.cdr.cdr.car;
-          const nameTuples = ast2tuples(name); // TODO: when to name-tuple or not; currently: not for params
+          // const nameTuples = ast2tuples(name); // TODO: when to name-tuple or not; currently: not for params
           const initTuples = ast2tuples(init);
           const bodyTuples = ast2tuples(body);
-          return [['$let', ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
+          return [['$let', ast.tag, name, init.tag, body.tag], ...initTuples, ...bodyTuples];
         }
         case "letrec":
         {
           const binding = ast.cdr.car;
-          const name = binding.car.car;
+          const name = binding.car.car.name;
           const init = binding.car.cdr.car;
           const body = ast.cdr.cdr.car;
-          const nameTuples = ast2tuples(name);
+          // const nameTuples = ast2tuples(name);
           const initTuples = ast2tuples(init);
           const bodyTuples = ast2tuples(body);
-          return [['$letrec', ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
+          return [['$letrec', ast.tag, name, init.tag, body.tag], ...initTuples, ...bodyTuples];
         }
         case "if":
         {
@@ -382,11 +380,11 @@ function ast2tuples(ast)
 
         case "set!":
         {
-          const name = ast.cdr.car;
+          const name = ast.cdr.car.name;
           const update = ast.cdr.cdr.car;
-          const nameTuples = ast2tuples(name);
+          //  const nameTuples = ast2tuples(name);
           const updateTuples = ast2tuples(update);
-          return [['$set', ast.tag, name.tag, update.tag], ...nameTuples, ...updateTuples];         
+          return [['$set', ast.tag, name, update.tag], ...updateTuples];         
         }
 
         case "set-car!":
@@ -422,10 +420,10 @@ function ast2tuples(ast)
       return [['$app', ast.tag, car.tag], ...ratorTuples, ...argTuples];
     }
   }
-  throw new Error(`cannot handle expression ${ast}`);
+  throw new Error(`cannot handle expression ${ast} of type ${ast.constructor.name}`);
 }
 
 
-// console.log(greval(`
-// (let ((x (cons 1 2))) (let ((u (set-car! x 22))) (cdr x)))
-// `));
+console.log(greval(`
+(let ((x 10)) (let ((y 20)) y))
+`));
