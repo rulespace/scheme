@@ -137,7 +137,6 @@ const spec = `
 (rule [path_root e] [$cons _ e _])
 (rule [path_root e] [$cons _ _ e])
 
-
 (rule [eval_path_root [root e_r s_r] s_r d]
   [greval e_r s_r d] [path_root e_r]) 
 (rule [eval_path_root r [state e κ] d]
@@ -153,45 +152,44 @@ const spec = `
 
         
 ; graph evaluator
-(rule [evaluated e [state e κ]] [$lit e _] [reachable [state e κ]])
-(rule [evaluated e [state e κ]] [$id e _] [reachable [state e κ]])
-(rule [evaluated e [state e κ]] [$lam e _] [reachable [state e κ]])
-(rule [evaluated e_rator [state e κ]] [$app e e_rator] [reachable [state e κ]])
-(rule [evaluated e_rand [state e κ]] [$app e _] [arg e_rand e _] [reachable [state e κ]])
-(rule [evaluated e_cond [state e κ]] [$if e e_cond _ _] [reachable [state e κ]])
+(rule [prim_binding "+" + 2])
+(rule [prim_binding "-" - 2])
+(rule [prim_binding "*" * 2])
+(rule [prim_binding "=" = 2])
+(rule [prim_binding "<" < 2])
+(rule [prim_binding "even?" even? 1])
+
+(rule [atomic e e] [$lit e _])
+(rule [atomic e e] [$id e _])
+(rule [atomic e e] [$lam e _])
+(rule [atomic e_rator e] [$app e e_rator])
+(rule [atomic e_rand e] [$app e _] [arg e_rand e _])
+(rule [atomic e_cond e] [$if e e_cond _ _])
 ; cons car cdr
-(rule [evaluated e_car [state e κ]] [$cons e e_car _] [reachable [state e κ]])
-(rule [evaluated e_cdr [state e κ]] [$cons e _ e_cdr] [reachable [state e κ]])
-(rule [evaluated e_id [state e_car κ]] [$car e_car e_id] [reachable [state e_car κ]])
-(rule [evaluated e_id [state e_cdr κ]] [$cdr e_cdr e_id] [reachable [state e_cdr κ]])
+(rule [atomic e_car e] [$cons e e_car _])
+(rule [atomic e_cdr e] [$cons e _ e_cdr])
+(rule [atomic e_id e] [$car e e_id])
+(rule [atomic e_id e] [$cdr e e_id])
 ; set!
-(rule [evaluated e_upd [state e_set κ]] [$set e_set _ e_upd] [reachable [state e_set κ]])
+(rule [atomic e_upd e] [$set e _ e_upd])
 ; set-cxr!
-(rule [evaluated e_id [state e_setcar κ]] [$setcar e_setcar e_id _] [reachable [state e_setcar κ]])
-(rule [evaluated e_upd [state e_setcar κ]] [$setcar e_setcar _ e_upd] [reachable [state e_setcar κ]])
-(rule [evaluated e_id [state e_setcdr κ]] [$setcdr e_setcdr e_id _] [reachable [state e_setcdr κ]])
-(rule [evaluated e_upd [state e_setcdr κ]] [$setcdr e_setcdr _ e_upd] [reachable [state e_setcdr κ]])
+(rule [atomic e_id e] [$setcar e e_id _])
+(rule [atomic e_upd e] [$setcar e _ e_upd])
+(rule [atomic e_id e] [$setcdr e e_id _])
+(rule [atomic e_upd e] [$setcdr e _ e_upd])
 
-
-(rule [prim2 "+" + 2])
-(rule [prim2 "-" - 2])
-(rule [prim2 "*" * 2])
-(rule [prim2 "=" = 2])
-(rule [prim2 "<" < 2])
-(rule [prim2 "even?" even? 1])
-
-(rule [greval e’ s d] [$lit e’ d] [evaluated e’ s])
+(rule [greval e’ [state e κ] d] [$lit e’ d] [atomic e’ e] [reachable [state e κ]])
 ; without set!
-; (rule [greval e’ s d] [$id e’ x] [evaluated e’ s] [lookup_var_root x s [root e_r s_r]] [greval e_r s_r d])
+; (rule [greval e’[state e κ] d] [$id e’ x] [atomic e’ e] [lookup_var_root x [state e κ] [root e_r s_r]] [greval e_r s_r d])
 ; with set!
-(rule [greval e’ s d] [$id e’ x] [evaluated e’ s] [lookup_var_root x s [root e_r s_r]] [eval_var_root [root e_r s_r] s d])
-(rule [greval e’ s [prim proc arity]] [$id e’ x] [evaluated e’ s] [prim2 x proc arity])
-(rule [greval e’ s [obj e’ s]] [$lam e’ _] [evaluated e’ s])
-(rule [greval e [state e κ] d] [$let e _ _ e_body] [reachable [state e κ]] [greval e_body [state e_body κ] d])
-(rule [greval e [state e κ] d] [$letrec e _ _ e_body] [reachable [state e κ]] [greval e_body [state e_body κ] d])
+(rule [greval e’ [state e κ] d] [$id e’ x] [atomic e’ e] [lookup_var_root x [state e κ] [root e_r s_r]] [eval_var_root [root e_r s_r] [state e κ] d])
+(rule [greval e’ [state e κ] [prim proc arity]] [$id e’ x] [atomic e’ e] [reachable [state e κ]] [prim_binding x proc arity])
+(rule [greval e’ [state e κ] [obj e’ [state e κ]]] [$lam e’ _] [atomic e’ e] [reachable [state e κ]])
+(rule [greval e [state e κ] d] [$let e _ _ e_body] [greval e_body [state e_body κ] d])
+(rule [greval e [state e κ] d] [$letrec e _ _ e_body] [greval e_body [state e_body κ] d])
 (rule [greval e [state e κ] d] [$app e _] [step [state e κ] [state e_body κ’]] [$lam _ e_body] [greval e_body [state e_body κ’] d])
-(rule [greval e [state e κ] d] [$app e e_rator] [reachable [state e κ]] [greval e_rator [state e κ] [prim proc 1]] [arg e1 e 0] [greval e1 [state e κ] d1] (:= d (proc d1)))
-(rule [greval e [state e κ] d] [$app e e_rator] [reachable [state e κ]] [greval e_rator [state e κ] [prim proc 2]] [arg e1 e 0] [greval e1 [state e κ] d1] [arg e2 e 1] [greval e2 [state e κ] d2] (:= d (proc d1 d2)))
+(rule [greval e [state e κ] d] [$app e e_rator] [greval e_rator [state e κ] [prim proc 1]] [arg e1 e 0] [greval e1 [state e κ] d1] (:= d (proc d1)))
+(rule [greval e [state e κ] d] [$app e e_rator] [greval e_rator [state e κ] [prim proc 2]] [arg e1 e 0] [greval e1 [state e κ] d1] [arg e2 e 1] [greval e2 [state e κ] d2] (:= d (proc d1 d2)))
 (rule [greval e [state e κ] d] [$if e _ _ _] [step [state e κ] [state e_thenelse κ]] [greval e_thenelse [state e_thenelse κ] d])
 ; cons car cdr
 (rule [greval e_cons s [obj e_cons s]] [$cons e_cons _ _] [reachable s])
