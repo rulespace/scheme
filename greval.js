@@ -19,7 +19,9 @@ export function greval(src)
 {
   const ast = new SchemeParser().parse(src);
   const programTuples = ast2tuples(ast.car); 
-  //  console.log(programTuples.join('\n'));
+  
+//  console.log(programTuples.join('\n'));
+  // console.log(programTuples.map(t => `\\rel{${t[0].substring(1)}}(${t.slice(1).join()})`).join(',\n'));
 
   const evaluator = evaluatorCtr();
   evaluator.addTuples(programTuples.map(t => toModuleTuple(evaluator, t)));
@@ -47,18 +49,19 @@ function param2tuples(p)
   {
     if (param instanceof Sym)
     {
-      return [['param', param.tag, param.name, p, i]]; 
+      const paramTuples = ast2tuples(param);
+      return [['param', param.tag, p, i], ...paramTuples]; 
     }
     throw new Error(`cannot handle param ${param}`);
   }
 }
 
-function arg2tuples(p)
+function rand2tuples(p)
 {
   return function (arg, i)
   {
-    const argTuples = ast2tuples(arg);
-    return [['arg', arg.tag, p, i], ...argTuples];
+    const randTuples = ast2tuples(arg);
+    return [['rand', arg.tag, p, i], ...randTuples];
   }
 }
 
@@ -98,24 +101,24 @@ function ast2tuples(ast)
         case "let":
         {
           const binding = ast.cdr.car;
-          const name = binding.car.car.name;
+          const name = binding.car.car;
           const init = binding.car.cdr.car;
           const body = ast.cdr.cdr.car;
-          // const nameTuples = ast2tuples(name);
+          const nameTuples = ast2tuples(name);
           const initTuples = ast2tuples(init);
           const bodyTuples = ast2tuples(body);
-          return [['$let', ast.tag, name, init.tag, body.tag], ...initTuples, ...bodyTuples];
+          return [['$let', ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
         }
         case "letrec":
         {
           const binding = ast.cdr.car;
-          const name = binding.car.car.name;
+          const name = binding.car.car;
           const init = binding.car.cdr.car;
           const body = ast.cdr.cdr.car;
-          // const nameTuples = ast2tuples(name);
+          const nameTuples = ast2tuples(name);
           const initTuples = ast2tuples(init);
           const bodyTuples = ast2tuples(body);
-          return [['$letrec', ast.tag, name, init.tag, body.tag], ...initTuples, ...bodyTuples];
+          return [['$letrec', ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
         }
         case "if":
         {
@@ -151,11 +154,11 @@ function ast2tuples(ast)
 
         case "set!":
         {
-          const name = ast.cdr.car.name;
+          const name = ast.cdr.car;
           const update = ast.cdr.cdr.car;
-          //  const nameTuples = ast2tuples(name);
+          const nameTuples = ast2tuples(name);
           const updateTuples = ast2tuples(update);
-          return [['$set', ast.tag, name, update.tag], ...updateTuples];         
+          return [['$set', ast.tag, name.tag, update.tag], ...nameTuples,  ...updateTuples];         
         }
 
         case "set-car!":
@@ -179,7 +182,7 @@ function ast2tuples(ast)
         default: // app
         {
           const ratorTuples = ast2tuples(car);
-          const argTuples = [...ast.cdr].flatMap(arg2tuples(ast.tag));
+          const argTuples = [...ast.cdr].flatMap(rand2tuples(ast.tag));
           return [['$app', ast.tag, car.tag], ...ratorTuples, ...argTuples];
         }
       }
@@ -187,7 +190,7 @@ function ast2tuples(ast)
     else // not a special form
     { // TODO: cloned from default case above
       const ratorTuples = ast2tuples(car);
-      const argTuples = [...ast.cdr].flatMap(arg2tuples(ast.tag));
+      const argTuples = [...ast.cdr].flatMap(rand2tuples(ast.tag));
       return [['$app', ast.tag, car.tag], ...ratorTuples, ...argTuples];
     }
   }
@@ -196,5 +199,8 @@ function ast2tuples(ast)
 
 
 console.log(greval(`
-(let ((x 10)) (let ((y 20)) y))
+(let ((x 10))
+  (let ((f (lambda (a b)
+              (+ a b))))
+    (f x 20)))
 `));
