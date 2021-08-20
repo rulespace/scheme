@@ -123,10 +123,10 @@ export const specification = `
         
 
 ; path roots
-(rule [lookup_path_root e_id "car" s [root e_car s_r]]
-          [$id e_id _] [greval e_id s [obj e_cons s_r]] [$cons e_cons e_car _])
-(rule [lookup_path_root e_id "cdr" s [root e_cdr s_r]]
-          [$id e_id _] [greval e_id s [obj e_cons s_r]] [$cons e_cons _ e_cdr])
+(rule [lookup_path_root e "car" s [root e_car s_r]]
+        [greval e s [obj e_cons s_r]] [$cons e_cons e_car _])
+(rule [lookup_path_root e "cdr" s [root e_cdr s_r]]
+        [greval e s [obj e_cons s_r]] [$cons e_cons _ e_cdr])
 
 ; eval path root (only for set-cxr!)
 (rule [setcxr e] [$setcar e _ _])
