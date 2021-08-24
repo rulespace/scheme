@@ -1,6 +1,7 @@
 import { specification } from './greval-rsp.js';
 import { compileToConstructor, instance2dot } from 'rulespace';
 import { SchemeParser, Sym, Pair } from './sexp-reader.js';
+import { assertTrue } from 'common';
 
 const evaluatorCtr = compileToConstructor(specification, {debug:false});
 
@@ -15,6 +16,137 @@ function toModuleTuple(module, genericTuple)
   return new tupleCtr(...genericTuple.slice(1));
 }
 
+function getTuples(evaluator, pred)
+{
+  return [...evaluator.tuples()].filter(t => t.constructor.name === pred);
+}
+
+function debug(evaluator)
+{
+  const tuples = [...evaluator.tuples()];
+
+  console.log(tuples.join('\n'));
+  // console.log(instance2dot(evaluator));
+
+  function getAstTuple(tag)
+  {
+    for (const t of tuples)
+    {
+      if (t.constructor.name.startsWith('$') || t.constructor.name === 'param' || t.constructor.name === 'arg')
+      {
+        if (t.t0 === tag)
+        {
+          return t;
+        }
+      }
+    }
+    throw new Error(`tuple with tag ${tag} not found`);
+  }
+
+  function expToString(tag)
+  {
+    const t = getAstTuple(tag);
+    switch (t.constructor.name)
+    {
+      case '$id': return t.t1;
+      case '$lit': return t.t1;
+      case '$let': return `(let ((${expToString(t.t1)} ${expToString(t.t2)})) ${expToString(t.t3)})`;
+      case '$set': return `(set! ${expToString(t.t1)} ${expToString(t.t2)})`;
+      case '$cons': return `(cons ${expToString(t.t1)} ${expToString(t.t2)})`;
+      case '$car': return `(car ${expToString(t.t1)})`;
+      case '$setcar': return `(set-car! ${expToString(t.t1)} ${expToString(t.t2)})`;
+      case '$app': return `(${expToString(t.t1)} ...)`;
+      default: throw new Error(t.constructor.name);
+    }
+  }
+  function toString(t)
+  {
+    const pred = t.constructor.name;
+    switch (pred)
+    {
+      case 'state':
+        return `${expToString(t.t0)} ${t.t1}`;
+      default: return String(t);
+    }
+  }
+
+  const seen = new Set();
+  assertTrue(getTuples(evaluator, 'initial_state').length === 1);
+  const initial = getTuples(evaluator, 'initial_state')[0].t0;
+  const todo = [initial];
+  while (todo.length > 0)
+  {
+    const current = todo.pop();
+    if (seen.has(current))
+    {
+      continue;
+    }
+    seen.add(current);
+    console.log(`\n====\n${current} ${toString(current)}`);
+
+    for (const t of tuples)
+    {
+      if (t.constructor.name === 'env' && t.t1 === current)
+      {
+        const name = t.t0;
+        const addr = t.t2;
+        console.log(`env ${name} ${addr}`);
+      }
+    }
+
+    for (const t of tuples)
+    {
+      if (t.constructor.name === 'lookup_path_root' && t.t2 === current)
+      {
+        const exp = t.t0;
+        const path = t.t1;
+        const addr = t.t3;
+        console.log(`lookup_path_root |${expToString(exp)}| ${path} ${addr}`);
+      }
+    }
+
+    for (const t of tuples)
+    {
+      if ((t.constructor.name === 'modifies_var' || t.constructor.name === 'modifies_path') && t.t2 === current)
+      {
+        const e_upd = t.t0;
+        const addr = t.t1;
+        console.log(`${t.constructor.name} |${expToString(e_upd)}| ${addr}`);
+      }
+    }
+
+    for (const t of tuples)
+    {
+      if ((t.constructor.name === 'eval_var_root' || t.constructor.name === 'eval_path_root') && t.t1 === current)
+      {
+        const addr = t.t0;
+        const val = t.t2;
+        console.log(`${t.constructor.name} ${addr} ${val}`);
+      }
+    }
+
+    for (const t of tuples)
+    {
+      if (t.constructor.name === 'greval' && t.t1 === current)
+      {
+        const exp = t.t0;
+        const val = t.t2;
+        console.log(`greval |${expToString(exp)}| ${val}`);
+      }
+    }
+
+    for (const t_step of tuples)
+    {
+      if (t_step.constructor.name === 'step' && t_step.t0 === current)
+      {
+        const succ = t_step.t1;
+        todo.push(succ);
+        console.log(`-> ${succ}`);
+      }
+    }
+  }
+}
+
 export function greval(src)
 {
   const ast = new SchemeParser().parse(src);
@@ -26,10 +158,7 @@ export function greval(src)
   const evaluator = evaluatorCtr();
   evaluator.addTuples(programTuples.map(t => toModuleTuple(evaluator, t)));
 
-  // console.log([...evaluator.tuples()].join('\n'));
-  // console.log(instance2dot(evaluator));
-
-  const astrootTuples = [...evaluator.tuples()].filter(t => t.constructor.name === 'ast_root');
+  const astrootTuples = getTuples(evaluator, 'ast_root');
   if (astrootTuples.length !== 1)
   {
     console.log("program:");
@@ -39,9 +168,12 @@ export function greval(src)
     throw new Error(`wrong number of 'astroot' tuples: ${astrootTuples.length}`);
   }
 
-  const evaluateTuples = [...evaluator.tuples()].filter(t => t.constructor.name === 'evaluate');
+  // debug(evaluator);
+
+  const evaluateTuples = getTuples(evaluator, 'evaluate');
   return evaluateTuples.map(t => t.t1);
 }
+
 
 function param2tuples(p)
 {
@@ -199,8 +331,7 @@ function ast2tuples(ast)
 
 
 console.log(greval(`
-(let ((x 10))
-  (let ((f (lambda (a b)
-              (+ a b))))
-    (f x 20)))
+(let ((x (cons 1 2)))
+      (let ((u (set-car! x 9)))
+        (car x)))
 `));
