@@ -51,10 +51,15 @@ function debug(evaluator)
       case '$id': return t.t1;
       case '$lit': return t.t1;
       case '$let': return `(let ((${expToString(t.t1)} ${expToString(t.t2)})) ${expToString(t.t3)})`;
+      case '$letrec': return `(letrec ((${expToString(t.t1)} ${expToString(t.t2)})) ${expToString(t.t3)})`;
+      case '$lam': return `(lambda ... ${expToString(t.t1)})`;
+      case '$if': return `(if ${expToString(t.t1)} ${expToString(t.t2)} ${expToString(t.t3)})`;
       case '$set': return `(set! ${expToString(t.t1)} ${expToString(t.t2)})`;
       case '$cons': return `(cons ${expToString(t.t1)} ${expToString(t.t2)})`;
       case '$car': return `(car ${expToString(t.t1)})`;
+      case '$cdr': return `(cdr ${expToString(t.t1)})`;
       case '$setcar': return `(set-car! ${expToString(t.t1)} ${expToString(t.t2)})`;
+      case '$setcdr': return `(set-cdr! ${expToString(t.t1)} ${expToString(t.t2)})`;
       case '$app': return `(${expToString(t.t1)} ...)`;
       default: throw new Error(t.constructor.name);
     }
@@ -147,8 +152,11 @@ function debug(evaluator)
   }
 }
 
-export function greval(src)
+export function greval(src, options = {})
 {
+
+  const FLAG_debug = options.debug ?? false;
+
   const ast = new SchemeParser().parse(src);
   const programTuples = ast2tuples(ast.car); 
   
@@ -168,7 +176,10 @@ export function greval(src)
     throw new Error(`wrong number of 'astroot' tuples: ${astrootTuples.length}`);
   }
 
-  // debug(evaluator);
+  if (FLAG_debug)
+  {
+    debug(evaluator);
+  }
 
   const evaluateTuples = getTuples(evaluator, 'evaluate');
   return evaluateTuples.map(t => t.t1);
@@ -310,7 +321,6 @@ function ast2tuples(ast)
           return [['$setcdr', ast.tag, name.tag, update.tag], ...nameTuples, ...updateTuples];         
         }
 
-
         default: // app
         {
           const ratorTuples = ast2tuples(car);
@@ -320,7 +330,7 @@ function ast2tuples(ast)
       }
     }
     else // not a special form
-    { // TODO: cloned from default case above
+    { // TODO: cloned from default (`app`) case above
       const ratorTuples = ast2tuples(car);
       const argTuples = [...ast.cdr].flatMap(rand2tuples(ast.tag));
       return [['$app', ast.tag, car.tag], ...ratorTuples, ...argTuples];
@@ -331,7 +341,10 @@ function ast2tuples(ast)
 
 
 console.log(greval(`
-(let ((x (cons 1 2)))
-      (let ((u (set-car! x 9)))
-        (car x)))
-`));
+;(let ((x (cons 1 2)))
+;      (let ((u (set-car! x 9)))
+;        (car x)))
+
+(let ((x (cons 1 2))) (car x))
+
+`, {debug:true}));

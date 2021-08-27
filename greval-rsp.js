@@ -93,16 +93,16 @@ export const specification = `
 (rule [binding e] [$letrec e _ _ _])
 (rule [binding e] [$app e _])
 
-(rule [env x [state e_body κ] [root e_init [state e_init κ]]] [$let e e_id e_init e_body] [$id e_id x] [reachable [state e κ]])
-(rule [env x [state e_init κ] r] [env x [state p κ] r] [$let p _ e_init _])
-(rule [env x [state e_body κ] r] [env x [state p κ] r] [$let p e_id _ e_body] (not [$id e_id x]))
-(rule [env x [state e_init κ] [root e_init [state e_init κ]]] [$letrec e e_id e_init _] [$id e_id x] [reachable [state e κ]])
-(rule [env x [state e_body κ] [root e_init [state e_init κ]]] [$letrec e e_id e_init e_body] [$id e_id x] [reachable [state e κ]])
-(rule [env x [state e_init κ] r] [env x [state p κ] r] [$letrec p e_id e_init _] (not [$id e_id x]))
-(rule [env x [state e_body κ] r] [env x [state p κ] r] [$letrec p e_id _ e_body] (not [$id e_id x]))
-(rule [env x [state e_body κ’] [root e_rand [state e κ]]] [$app e e_rator] [$lam e_lam e_body] [param e_id e_lam i] [$id e_id x] [rand e_rand e i] [step [state e κ] [state e_body κ’]])
-(rule [env x [state e_body κ’] r] [$app e e_rator] [greval e_rator [state e κ] [obj e_lam [state e_obj κ_obj]]] [env x [state e_obj κ_obj] r] (not [binds e_lam x]) [step [state e κ] [state e_body κ’]])
-(rule [env x [state e κ] r] [env x [state p κ] r] (not [binding p]) [parent e p])
+(rule [lookup_var_root x [state e_body κ] [root e_init [state e_init κ]]] [$let e e_id e_init e_body] [$id e_id x] [reachable [state e κ]])
+(rule [lookup_var_root x [state e_init κ] r] [lookup_var_root x [state p κ] r] [$let p _ e_init _])
+(rule [lookup_var_root x [state e_body κ] r] [lookup_var_root x [state p κ] r] [$let p e_id _ e_body] (not [$id e_id x]))
+(rule [lookup_var_root x [state e_init κ] [root e_init [state e_init κ]]] [$letrec e e_id e_init _] [$id e_id x] [reachable [state e κ]])
+(rule [lookup_var_root x [state e_body κ] [root e_init [state e_init κ]]] [$letrec e e_id e_init e_body] [$id e_id x] [reachable [state e κ]])
+(rule [lookup_var_root x [state e_init κ] r] [lookup_var_root x [state p κ] r] [$letrec p e_id e_init _] (not [$id e_id x]))
+(rule [lookup_var_root x [state e_body κ] r] [lookup_var_root x [state p κ] r] [$letrec p e_id _ e_body] (not [$id e_id x]))
+(rule [lookup_var_root x [state e_body κ’] [root e_rand [state e κ]]] [$app e e_rator] [$lam e_lam e_body] [param e_id e_lam i] [$id e_id x] [rand e_rand e i] [step [state e κ] [state e_body κ’]])
+(rule [lookup_var_root x [state e_body κ’] r] [$app e e_rator] [greval e_rator [state e κ] [obj e_lam [state e_obj κ_obj]]] [lookup_var_root x [state e_obj κ_obj] r] (not [binds e_lam x]) [step [state e κ] [state e_body κ’]])
+(rule [lookup_var_root x [state e κ] r] [lookup_var_root x [state p κ] r] (not [binding p]) [parent e p])
 
 (rule [lookup_path_root e "car" s [root e_car s_r]]
         [greval e s [obj e_cons s_r]] [$cons e_cons e_car _])
@@ -122,13 +122,14 @@ export const specification = `
 (rule [setcxr e] [$setcdr e _ _])
 
 (rule [modifies_var e_upd r [state e κ]]
-  [$set e e_id e_upd] [$id e_id x] [env x [state e κ] r])
+  [$set e e_id e_upd] [$id e_id x] [lookup_var_root x [state e κ] r])
 
 (rule [modifies_path e_upd r [state e κ]]
   [$setcar e e_id e_upd] [lookup_path_root e_id "car" [state e κ] r])
 
 (rule [modifies_path e_upd r [state e κ]]
   [$setcdr e e_id e_upd] [lookup_path_root e_id "cdr" [state e κ] r])
+
 
 (rule [eval_var_root [root e_r s_r] s_r d]
   [greval e_r s_r d] [var_root e_r])
@@ -139,9 +140,6 @@ export const specification = `
   [modifies_var e_upd r s] [greval e_upd s d])
 (rule [eval_path_root r s d]
   [modifies_path e_upd r s] [greval e_upd s d])
-(rule [eval_root r s d]
-    [modifies e_upd r s] [greval e_upd s d])
-
   
 (rule [eval_var_root r s d]
   [eval_var_root r s’ d] [step s’ s] [modifies_var _ r’ s] (!= r r’))
@@ -183,9 +181,9 @@ export const specification = `
 
 (rule [greval e’ [state e κ] d] [$lit e’ d] [atomic e’ e] [reachable [state e κ]])
 ; without set!
-; (rule [greval e’ [state e κ] d] [$id e’ x] [atomic e’ e] [env x [state e κ] [root e_r s_r]] [greval e_r s_r d])
+; (rule [greval e’ [state e κ] d] [$id e’ x] [atomic e’ e] [lookup_var_root x [state e κ] [root e_r s_r]] [greval e_r s_r d])
 ; with set!
-(rule [greval e’ [state e κ] d] [$id e’ x] [atomic e’ e] [env x [state e κ] [root e_r s_r]] [eval_var_root [root e_r s_r] [state e κ] d])
+(rule [greval e’ [state e κ] d] [$id e’ x] [atomic e’ e] [lookup_var_root x [state e κ] [root e_r s_r]] [eval_var_root [root e_r s_r] [state e κ] d])
 (rule [greval e’ [state e κ] [prim proc arity]] [$id e’ x] [atomic e’ e] [reachable [state e κ]] [prim_binding x proc arity])
 (rule [greval e’ [state e κ] [obj e’ [state e κ]]] [$lam e’ _] [atomic e’ e] [reachable [state e κ]])
 (rule [greval e [state e κ] d] [$let e _ _ e_body] [greval e_body [state e_body κ] d])
@@ -204,12 +202,15 @@ export const specification = `
 ;        [$cdr e_cdr e_id] 
 ;        [lookup_path_root e_id "cdr" [state e_cdr κ] [root e_r s_r]] [greval e_r s_r d])
 ; with set-cxr!
-(rule [greval e_car [state e_car κ] d]
-        [$car e_car e_id] [lookup_path_root e_id "car" [state e_car κ] r] [eval_path_root r [state e_car κ] d])
-(rule [greval e_cdr [state e_cdr κ] d]
-        [$cdr e_cdr e_id] [lookup_path_root e_id "cdr" [state e_cdr κ] r] [eval_path_root r [state e_cdr κ] d])
+(rule [greval e [state e κ] d]
+        [$car e e_id] [lookup_path_root e_id "car" [state e κ] r] [eval_path_root r [state e κ] d])
+(rule [greval e [state e κ] d]
+        [$cdr e e_id] [lookup_path_root e_id "cdr" [state e κ] r] [eval_path_root r [state e κ] d])
 ; set!
 (rule [greval e [state e κ] "unspecified"] [$set e _ _] [reachable [state e κ]]) ; TODO symbol support: 'unspecified iso. "unspecified"
+; set-car! set-cdr!
+(rule [greval e [state e κ] "unspecified"] [$setcar e _ _] [reachable [state e κ]]) ; TODO symbol support: 'unspecified iso. "unspecified"
+(rule [greval e [state e κ] "unspecified"] [$setcdr e _ _] [reachable [state e κ]]) ; TODO symbol support: 'unspecified iso. "unspecified"
 
 ; evaluator
 ;(rule [evaluate e d] [final [state e κ]] [greval e [state e κ] d])
