@@ -1,5 +1,19 @@
 export const specification = `
 
+; params
+(rule [prim_binding "+" (lambda (x y) "prim") 2])
+(rule [prim_binding "-" (lambda (x y) "prim") 2])
+(rule [prim_binding "*" (lambda (x y) "prim") 2])
+(rule [prim_binding "=" (lambda (x y) "prim") 2])
+(rule [prim_binding "<" (lambda (x y) "prim") 2])
+(rule [prim_binding "even?" (lambda (x y) "prim") 1])
+
+(rule [is_true (lambda (_) #t)])
+(rule [is_false (lambda (_) #t)])
+
+(rule [kalloc (lambda (e κ) 0)]) ; 0-CFA
+;(rule [kalloc (lambda (e κ) e)]) ; k=1-CFA
+
 ; ast
 (rule [ast e] [$lit e _])
 (rule [ast e] [$id e _])
@@ -63,10 +77,10 @@ export const specification = `
 (rule [step [state e κ] s’] [$lam e _] [cont [state e κ] s’])
 (rule [step [state e κ] [state e_init κ]] [$let e _ e_init _] [reachable [state e κ]])
 (rule [step [state e κ] [state e_init κ]] [$letrec e _ e_init _] [reachable [state e κ]])
-(rule [step [state e κ] [state e_body [call e κ]]] [$app e e_rator] [greval e_rator [state e κ] [obj e_lam _]] [$lam e_lam e_body])
+(rule [step [state e κ] [state e_body κ’]] [$app e e_rator] [greval e_rator [state e κ] [obj e_lam _]] [$lam e_lam e_body] [kalloc f] (:= κ’ (f e κ)))
 (rule [step [state e κ] s’] [$app e e_rator] [greval e_rator [state e κ] [prim _ _]] [cont [state e κ] s’])
-(rule [step [state e κ] [state e_then κ]] [$if e e_cond e_then _] [greval e_cond [state e κ] d] (!= d #f))
-(rule [step [state e κ] [state e_else κ]] [$if e e_cond _ e_else] [greval e_cond [state e κ] #f])
+(rule [step [state e κ] [state e_then κ]] [$if e e_cond e_then _] [greval e_cond [state e κ] d] [is_true f] (f d))
+(rule [step [state e κ] [state e_else κ]] [$if e e_cond _ e_else] [greval e_cond [state e κ] d] [is_false f] (f d))
 ; cons car cdr
 (rule [step [state e κ] s’] [$cons e _ _] [cont [state e κ] s’])
 (rule [step [state e κ] s’] [$car e _ ] [cont [state e κ] s’])
@@ -153,14 +167,6 @@ export const specification = `
         
 
 ; graph evaluator
-(rule [prim_binding "+" + 2])
-(rule [prim_binding "-" - 2])
-(rule [prim_binding "*" * 2])
-(rule [prim_binding "=" = 2])
-(rule [prim_binding "<" < 2])
-(rule [prim_binding "even?" even? 1])
-
-
 (rule [atomic e e] [$lit e _])
 (rule [atomic e e] [$id e _])
 (rule [atomic e e] [$lam e _])
@@ -180,10 +186,9 @@ export const specification = `
 (rule [atomic e_id e] [$setcdr e e_id _]) 
 (rule [atomic e_upd e] [$setcdr e _ e_upd])
 
-(rule [greval e’ [state e κ] d] [$lit e’ d] [atomic e’ e] [reachable [state e κ]])
-; without set!
-; (rule [greval e’ [state e κ] d] [$id e’ x] [atomic e’ e] [lookup_var_root x [state e κ] [root e_r s_r]] [greval e_r s_r d])
-; with set!
+;(rule [abst (lambda (x) "prim")])
+
+(rule [greval e’ [state e κ] "prim"] [$lit e’ d] [atomic e’ e] [reachable [state e κ]])
 (rule [greval e’ [state e κ] d] [$id e’ x] [atomic e’ e] [lookup_var_root x [state e κ] [root e_r s_r]] [eval_var_root [root e_r s_r] [state e κ] d])
 (rule [greval e’ [state e κ] [prim proc arity]] [$id e’ x] [atomic e’ e] [reachable [state e κ]] [prim_binding x proc arity])
 (rule [greval e’ [state e κ] [obj e’ [state e κ]]] [$lam e’ _] [atomic e’ e] [reachable [state e κ]])
@@ -195,14 +200,6 @@ export const specification = `
 (rule [greval e [state e κ] d] [$if e _ _ _] [step [state e κ] [state e_branch κ]] [greval e_branch [state e_branch κ] d])
 ; cons car cdr
 (rule [greval e_cons [state e_cons κ] [obj e_cons [state e_cons κ]]] [$cons e_cons _ _] [reachable [state e_cons κ]])
-; without set-cxr!
-;(rule [greval e_car [state e_car κ] d]
-;        [$car e_car e_id] 
-;        [lookup_path_root e_id "car" [state e_car κ] [root e_r s_r]] [greval e_r s_r d])
-;(rule [greval e_cdr [state e_cdr κ] d]
-;        [$cdr e_cdr e_id] 
-;        [lookup_path_root e_id "cdr" [state e_cdr κ] [root e_r s_r]] [greval e_r s_r d])
-; with set-cxr!
 (rule [greval e [state e κ] d]
         [$car e e_id] [lookup_path_root e_id "car" [state e κ] r] [eval_path_root r [state e κ] d])
 (rule [greval e [state e κ] d]
