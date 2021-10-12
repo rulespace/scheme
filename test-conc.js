@@ -2,6 +2,11 @@ import programs from './test-programs.js';
 import { greval } from './greval.js';
 import { performance } from 'perf_hooks';
 
+import { specification as analysis_specification } from './agreval-rsp.js';
+import { lattice_conc as lattice } from './lattice-rsp.js';
+import { kalloc_conc as kalloc } from './kalloc-rsp.js';
+
+
 const start = performance.now();
 for (const program of programs)
 {

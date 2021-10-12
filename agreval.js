@@ -1,8 +1,10 @@
-import * as evaluator from './compiled/agreval_module.mjs';
+// import * as evaluator from './compiled/agreval_module.mjs';
 import { compileToConstructor, compileToModuleSrc, deltaSource, instance2dot, metaInstance } from 'rulespace';
 import { SchemeParser, Sym, Pair } from './sexp-reader.js';
 import { assertTrue, MutableMaps, Sets } from 'common';
-import fs from 'fs';
+
+import { specification } from './agreval-rsp.js';
+
 
 function param2tuples(lam)
 {
@@ -186,38 +188,43 @@ function* filterPred(tuples, pred)
   }
 }
 
-export function agreval(src, options = {})
+export function create_agreval(configSrc)
 {
-
-  // this is badly named, since there's also a 'debug' flag on the rsp compiler
-  const FLAG_debug = options.debug ?? false;
-
-  const ast = new SchemeParser().parse(src);
-  const programTuples = ast2tuples(ast.car); 
-  
-//  console.log(programTuples.join('\n'));
-  // console.log(programTuples.map(t => `\\rel{${t[0].substring(1)}}(${t.slice(1).join()})`).join(',\n'));
-
-  evaluator.addTuples(programTuples.map(t => toModuleTuple(evaluator, t)));
-
-  const astrootTuples = getTuples2(evaluator, 'ast_root');
-  if (astrootTuples.length !== 1)
+ 
+  const evaluatorCtr = compileToConstructor(specification + configSrc);
+ 
+  return function agreval(src, options = {})
   {
-    console.log("program:");
-    console.log(src);
-    console.log("\nevaluator tuples:")
-    console.log([...evaluator.tuples()].join('\n'));
-    throw new Error(`wrong number of 'astroot' tuples: ${astrootTuples.length}`);
-  }
+    const evaluator = evaluatorCtr();
+    // this is badly named, since there's also a 'debug' flag on the rsp compiler
+    const FLAG_debug = options.debug ?? false;
+    
+    const ast = new SchemeParser().parse(src);
+    const programTuples = ast2tuples(ast.car); 
+    //  console.log(programTuples.join('\n'));
+    // console.log(programTuples.map(t => `\\rel{${t[0].substring(1)}}(${t.slice(1).join()})`).join(',\n'));
+    evaluator.addTuples(programTuples.map(t => toModuleTuple(evaluator, t)));
 
-  if (FLAG_debug)
-  {
-    debug(evaluator);
+    const astrootTuples = getTuples2(evaluator, 'ast_root');
+    if (astrootTuples.length !== 1)
+    {
+      console.log("program:");
+      console.log(src);
+      console.log("\nevaluator tuples:")
+      console.log([...evaluator.tuples()].join('\n'));
+      throw new Error(`wrong number of 'astroot' tuples: ${astrootTuples.length}`);
+    }
+
+    if (FLAG_debug)
+    {
+      debug(evaluator);
+    }
+    
+    return evaluator;
   }
-  //console.log(module.profileResults());
 }
 
-function* result()
+function* result(evaluator)
 {
   for (const t of filterPred(evaluator.tuples(), 'evaluate'))
   {
@@ -225,12 +232,12 @@ function* result()
   }
 }
 
-function initialState()
+function initialState(evaluator)
 {
   return [...filterPred(evaluator.tuples(), 'initial_state')][0].t0;
 }
 
-function successorStates(state)
+function successorStates(evaluator, state)
 {
   const result = [];
   for (const t of filterPred(evaluator.tuples(), 'step'))
@@ -243,7 +250,7 @@ function successorStates(state)
   return result;  
 }
 
-function astTuple(tag)
+function astTuple(evaluator, tag)
 {
   for (const t of evaluator.tuples())
   {
@@ -258,7 +265,7 @@ function astTuple(tag)
   throw new Error(`tuple with tag ${tag} not found`);
 }
    
-function expToString(tag)
+function expToString(evaluator, tag)
 {
   function helper(tag)
   {
@@ -298,7 +305,7 @@ function expToString(tag)
   return helper(tag);
 }
 
-function evaluate(exp, state)
+function evaluate(evaluator, exp, state)
 {
   const result = [];
   for (const t of filterPred(evaluator.tuples(), 'greval'))
@@ -311,7 +318,7 @@ function evaluate(exp, state)
   return result;
 }
 
-function debug()
+function debug(evaluator)
 {
   const tuples = [...evaluator.tuples()];
 
@@ -406,21 +413,21 @@ function debug()
   }
 }
 
-function createMetaInstance()
-{
-  const meta = metaInstance(evaluator);
-  deltaSource(evaluator).addDeltaObserver({
-    observe(delta)
-    {
-      meta.addTupleMap(delta.added());
-      meta.removeTupleMap()
-    }
-  })
-}
+// function createMetaInstance()
+// {
+//   const meta = metaInstance(evaluator);
+//   deltaSource(evaluator).addDeltaObserver({
+//     observe(delta)
+//     {
+//       meta.addTupleMap(delta.added());
+//       meta.removeTupleMap()
+//     }
+//   })
+// }
 
 function dotFlowGraph(evaluator, nodeToString)
 {
-  const todo = [evaluator.initialState()];
+  const todo = [initialState(evaluator)];
   const nodes = [];
   const transitions = new Map();
   while (todo.length > 0)
@@ -466,8 +473,12 @@ function dotProvenanceGraph()
   return instance2dot(evaluator);
 }
 
+import { lattice_conc as lattice } from './lattice-rsp.js';
+import { kalloc_0cfa as kalloc } from './kalloc-rsp.js';
+
+const agreval = create_agreval(lattice + kalloc);
 const start = Date.now();
-agreval(`
+const evaluator = agreval(`
 
 (let ((x 1))
   (let ((y 2))
@@ -477,7 +488,7 @@ agreval(`
 
 `, {debug:false});
 console.log(`${Date.now() - start} ms`);
-console.log([...result()]);
+console.log([...result(evaluator)]);
 // console.log(dotFlowGraph(evaluator, t => `${evaluator.expToString(t.t0)} | ${t.t1} | ${evaluator.evaluate(t.t0, t)}`));
 console.log(dotProvenanceGraph());
 

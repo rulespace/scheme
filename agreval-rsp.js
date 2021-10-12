@@ -1,18 +1,13 @@
 export const specification = `
 
-; params
-(rule [prim_binding "+" (lambda (x y) "prim") 2])
-(rule [prim_binding "-" (lambda (x y) "prim") 2])
-(rule [prim_binding "*" (lambda (x y) "prim") 2])
-(rule [prim_binding "=" (lambda (x y) "prim") 2])
-(rule [prim_binding "<" (lambda (x y) "prim") 2])
-(rule [prim_binding "even?" (lambda (x y) "prim") 1])
-
-(rule [is_true (lambda (_) #t)])
-(rule [is_false (lambda (_) #t)])
-
-(rule [kalloc (lambda (e κ) 0)]) ; 0-CFA
-;(rule [kalloc (lambda (e κ) e)]) ; k=1-CFA
+; params: lattice and kalloc
+; lattice:
+; (rule [abst <concrete value -> abstract value])
+; (rule [prim_binding <name> <fun args -> value> <arity>])
+; e.g. (rule [prim_binding "+" (lambda (x y) "prim") 2])
+; ...
+; kalloc: (rule [kalloc <fun e-app κ-app -> address>])
+; e.g. (rule [kalloc (lambda (e κ) e)])
 
 ; ast
 (rule [ast e] [$lit e _])
@@ -186,9 +181,7 @@ export const specification = `
 (rule [atomic e_id e] [$setcdr e e_id _]) 
 (rule [atomic e_upd e] [$setcdr e _ e_upd])
 
-;(rule [abst (lambda (x) "prim")])
-
-(rule [greval e’ [state e κ] "prim"] [$lit e’ d] [atomic e’ e] [reachable [state e κ]])
+(rule [greval e’ [state e κ] d] [$lit e’ c] [atomic e’ e] [reachable [state e κ]] [abst f] (:= d (f c)))
 (rule [greval e’ [state e κ] d] [$id e’ x] [atomic e’ e] [lookup_var_root x [state e κ] [root e_r s_r]] [eval_var_root [root e_r s_r] [state e κ] d])
 (rule [greval e’ [state e κ] [prim proc arity]] [$id e’ x] [atomic e’ e] [reachable [state e κ]] [prim_binding x proc arity])
 (rule [greval e’ [state e κ] [obj e’ [state e κ]]] [$lam e’ _] [atomic e’ e] [reachable [state e κ]])
