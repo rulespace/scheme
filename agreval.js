@@ -1,10 +1,16 @@
 // import * as evaluator from './compiled/agreval_module.mjs';
-import { compileToConstructor, compileToModuleSrc, deltaSource, instance2dot, metaInstance } from 'rulespace';
+import { assertTrue, MutableMaps, Sets } from '@rulespace/common';
+import { compileToConstructor, compileToModuleSrc, instance2dot, computeMeta } from '@rulespace/rulespace';
 import { SchemeParser, Sym, Pair } from './sexp-reader.js';
-import { assertTrue, MutableMaps, Sets } from 'common';
 
 import { specification } from './agreval-rsp.js';
 
+export { lattice_conc, lattice_prim } from './lattice-rsp.js';
+export { kalloc_conc, kalloc_0cfa } from './kalloc-rsp.js';
+export { specification as semantics_scheme };
+export { computeMeta };
+
+export { instance2dot };
 
 function param2tuples(lam)
 {
@@ -190,7 +196,6 @@ function* filterPred(tuples, pred)
 
 export function create_agreval(configSrc)
 {
- 
   const evaluatorCtr = compileToConstructor(specification + configSrc);
  
   return function agreval(src, options = {})
@@ -220,102 +225,145 @@ export function create_agreval(configSrc)
       debug(evaluator);
     }
     
-    return evaluator;
+    return new Evaluator(evaluator);
   }
 }
 
-function* result(evaluator)
+class Evaluator
 {
-  for (const t of filterPred(evaluator.tuples(), 'evaluate'))
+  constructor(evaluator)
   {
-    yield t.t1;
+    this.evaluator = evaluator;
   }
-}
 
-function initialState(evaluator)
-{
-  return [...filterPred(evaluator.tuples(), 'initial_state')][0].t0;
-}
-
-function successorStates(evaluator, state)
-{
-  const result = [];
-  for (const t of filterPred(evaluator.tuples(), 'step'))
+  computeFlowGraph()
   {
-    if (t.t0 === state)
+    const evaluator = this.evaluator;
+    const todo = [this.initialState()];
+    const states = new Set();
+    const transitions = [];
+    while (todo.length > 0)
     {
-      result.push(t.t1);
-    }
-  }
-  return result;  
-}
-
-function astTuple(evaluator, tag)
-{
-  for (const t of evaluator.tuples())
-  {
-    if (t.constructor.name.startsWith('$'))
-    {
-      if (t.t0 === tag)
+      const current = todo.pop();
+      if (states.has(current))
       {
-        return t;
+        continue;
+      }
+      states.add(current);
+      for (const succ of this.successorStates(current))
+      {
+        transitions.push([current, succ]);
+        todo.push(succ);
       }
     }
+    return {states:[...states], transitions};
   }
-  throw new Error(`tuple with tag ${tag} not found`);
-}
-   
-function expToString(evaluator, tag)
-{
-  function helper(tag)
+
+  *result()
   {
-    const t = astTuple(tag);
-    switch (t.constructor.name)
+    const evaluator = this.evaluator;
+    for (const t of filterPred(evaluator.tuples(), 'evaluate'))
     {
-      case '$id': return t.t1;
-      case '$lit': return t.t1;
-      case '$let': return `(let ((${helper(t.t1)} ${helper(t.t2)})) ${helper(t.t3)})`;
-      case '$letrec': return `(letrec ((${helper(t.t1)} ${helper(t.t2)})) ${helper(t.t3)})`;
-      case '$lam': return `(lambda ... ${helper(t.t1)})`;
-      case '$if': return `(if ${helper(t.t1)} ${helper(t.t2)} ${helper(t.t3)})`;
-      case '$set': return `(set! ${helper(t.t1)} ${helper(t.t2)})`;
-      case '$cons': return `(cons ${helper(t.t1)} ${helper(t.t2)})`;
-      case '$car': return `(car ${helper(t.t1)})`;
-      case '$cdr': return `(cdr ${helper(t.t1)})`;
-      case '$setcar': return `(set-car! ${helper(t.t1)} ${helper(t.t2)})`;
-      case '$setcdr': return `(set-cdr! ${helper(t.t1)} ${helper(t.t2)})`;
-      case '$app':
+     yield t.t1;
+    }
+  }
+
+  initialState()
+  {
+    const evaluator = this.evaluator;
+    return [...filterPred(evaluator.tuples(), 'initial_state')][0].t0;
+  }
+  
+  successorStates(state)
+  {
+    const evaluator = this.evaluator;
+    const result = [];
+    for (const t of filterPred(evaluator.tuples(), 'step'))
+    {
+      if (t.t0 === state)
+      {
+        result.push(t.t1);
+      }
+    }
+    return result;  
+  }
+  
+  astTuple(tag)
+  {
+    const evaluator = this.evaluator;
+    for (const t of evaluator.tuples())
+    {
+      if (t.constructor.name.startsWith('$'))
+      {
+        if (t.t0 === tag)
         {
-          const randTuples = [];
-          for (const t_rand of filterPred(evaluator.tuples(), 'rand'))
-          {
-            if (t_rand.t1 === t.t0)
-            {
-              randTuples.push(t_rand);
-            }
-          }
-          randTuples.sort((ta, tb) => ta.t2 - tb.t2);
-          const rands = randTuples.map(t => t.t0);
-          return `(${helper(t.t1)} ${rands.map(helper).join(' ')})`;
+          return t;
         }
-      default: throw new Error(t.constructor.name);
+      }
     }
+    throw new Error(`tuple with tag ${tag} not found`);
   }
-
-  return helper(tag);
-}
-
-function evaluate(evaluator, exp, state)
-{
-  const result = [];
-  for (const t of filterPred(evaluator.tuples(), 'greval'))
+     
+  expToString(tag)
   {
-    if (t.t0 === exp && t.t1 === state)
+    const evaluator = this.evaluator;
+    const self = this;
+    function helper(tag)
     {
-      result.push(t.t2);
+      const t = self.astTuple(tag);
+      switch (t.constructor.name)
+      {
+        case '$id': return t.t1;
+        case '$lit': return t.t1;
+        case '$let': return `(let ((${helper(t.t1)} ${helper(t.t2)})) ${helper(t.t3)})`;
+        case '$letrec': return `(letrec ((${helper(t.t1)} ${helper(t.t2)})) ${helper(t.t3)})`;
+        case '$lam': return `(lambda ... ${helper(t.t1)})`;
+        case '$if': return `(if ${helper(t.t1)} ${helper(t.t2)} ${helper(t.t3)})`;
+        case '$set': return `(set! ${helper(t.t1)} ${helper(t.t2)})`;
+        case '$cons': return `(cons ${helper(t.t1)} ${helper(t.t2)})`;
+        case '$car': return `(car ${helper(t.t1)})`;
+        case '$cdr': return `(cdr ${helper(t.t1)})`;
+        case '$setcar': return `(set-car! ${helper(t.t1)} ${helper(t.t2)})`;
+        case '$setcdr': return `(set-cdr! ${helper(t.t1)} ${helper(t.t2)})`;
+        case '$app':
+          {
+            const randTuples = [];
+            for (const t_rand of filterPred(evaluator.tuples(), 'rand'))
+            {
+              if (t_rand.t1 === t.t0)
+              {
+                randTuples.push(t_rand);
+              }
+            }
+            randTuples.sort((ta, tb) => ta.t2 - tb.t2);
+            const rands = randTuples.map(t => t.t0);
+            return `(${helper(t.t1)} ${rands.map(helper).join(' ')})`;
+          }
+        default: throw new Error(t.constructor.name);
+      }
     }
+  
+    return helper(tag);
   }
-  return result;
+
+  evaluate(exp, state)
+  {
+    const evaluator = this.evaluator;
+    const result = [];
+    for (const t of filterPred(evaluator.tuples(), 'greval'))
+    {
+      if (t.t0 === exp && t.t1 === state)
+      {
+        result.push(t.t2);
+      }
+    }
+    return result;
+  }
+
+  meta()
+  {
+    return computeMeta(this.evaluator);
+  }
 }
 
 function debug(evaluator)
@@ -425,70 +473,68 @@ function debug(evaluator)
 //   })
 // }
 
-function dotFlowGraph(evaluator, nodeToString)
-{
-  const todo = [initialState(evaluator)];
-  const nodes = [];
-  const transitions = new Map();
-  while (todo.length > 0)
-  {
-    const current = todo.pop();
-    let index = nodes.indexOf(current);
-    if (index > -1)
-    {
-      continue;
-    }
-    nodes.push(current);
-    for (const succ of evaluator.successorStates(current))
-    {
-      MutableMaps.putPushArray(transitions, current, succ);
-      todo.push(succ);
-    }
-  }
-  const dotNodes = nodes.map((node, i) => `${i} [label="${nodeToString(node)}"];`);
-  const dotTransitions = [];
-  for (const [source, dests] of transitions)
-  {
-    const tagSource = nodes.indexOf(source);
-    for (const dest of dests)
-    {
-      dotTransitions.push(`${tagSource} -> ${nodes.indexOf(dest)}`);
-    }
-  }
+// function dotFlowGraph(evaluator, nodeToString)
+// {
+//   const todo = [initialState(evaluator)];
+//   const nodes = [];
+//   const transitions = new Map();
+//   while (todo.length > 0)
+//   {
+//     const current = todo.pop();
+//     let index = nodes.indexOf(current);
+//     if (index > -1)
+//     {
+//       continue;
+//     }
+//     nodes.push(current);
+//     for (const succ of successorStates(evaluator, current))
+//     {
+//       MutableMaps.putPushArray(transitions, current, succ);
+//       todo.push(succ);
+//     }
+//   }
+//   const dotNodes = nodes.map((node, i) => `${i} [label="${nodeToString(node)}"];`);
+//   const dotTransitions = [];
+//   for (const [source, dests] of transitions)
+//   {
+//     const tagSource = nodes.indexOf(source);
+//     for (const dest of dests)
+//     {
+//       dotTransitions.push(`${tagSource} -> ${nodes.indexOf(dest)}`);
+//     }
+//   }
 
-  return `
-  digraph G {
-    node [style=filled,fontname="Roboto Condensed"];
+//   return `
+//   digraph G {
+//     node [style=filled,fontname="Roboto Condensed"];
 
-    ${dotNodes.join('\n')}
+//     ${dotNodes.join('\n')}
 
-    ${dotTransitions.join('\n')}
+//     ${dotTransitions.join('\n')}
 
-  }
-  `;
-}
+//   }
+//   `;
+// }
 
-function dotProvenanceGraph()
-{
-  return instance2dot(evaluator);
-}
 
-import { lattice_conc as lattice } from './lattice-rsp.js';
-import { kalloc_0cfa as kalloc } from './kalloc-rsp.js';
+// export function dotProvenanceGraph()
+// {
+//   return instance2dot(evaluator);
+// }
 
-const agreval = create_agreval(lattice + kalloc);
-const start = Date.now();
-const evaluator = agreval(`
+// import { lattice_conc as lattice } from './lattice-rsp.js';
+// import { kalloc_conc as kalloc } from './kalloc-rsp.js';
 
-(let ((x 1))
-  (let ((y 2))
-    (let ((u "piano"))
-      (let ((z (+ x y)))
-        z))))
+// const agreval = create_agreval(lattice + kalloc);
+// const start = Date.now();
+// const evaluator = agreval(`
 
-`, {debug:false});
-console.log(`${Date.now() - start} ms`);
-console.log([...result(evaluator)]);
-// console.log(dotFlowGraph(evaluator, t => `${evaluator.expToString(t.t0)} | ${t.t1} | ${evaluator.evaluate(t.t0, t)}`));
-console.log(dotProvenanceGraph());
+// (+ 1 2)
+
+
+// `, {debug:false});
+// console.log(`${Date.now() - start} ms`);
+// console.log([...result(evaluator)]);
+// // console.log(dotFlowGraph(evaluator, t => `${evaluator.expToString(t.t0)} | ${t.t1} | ${evaluator.evaluate(t.t0, t)}`));
+// console.log(dotProvenanceGraph());
 

@@ -1,7 +1,7 @@
+import { assertTrue } from '@rulespace/common';
+import { compileToConstructor, instance2dot } from '@rulespace/rulespace';
 import { specification } from './greval-rsp.js';
-import { compileToConstructor, instance2dot } from 'rulespace';
 import { SchemeParser, Sym, Pair } from './sexp-reader.js';
-import { assertTrue } from 'common';
 
 const evaluatorCtr = compileToConstructor(specification, {debug:false});
 
