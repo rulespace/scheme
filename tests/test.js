@@ -1,19 +1,16 @@
 import programs from './test-programs.js';
-import { greval } from './greval.js';
+import { create_agreval, lattice_conc, kalloc_conc } from '../agreval.js';
 import { performance } from 'perf_hooks';
 
-import { specification as analysis_specification } from './agreval-rsp.js';
-import { lattice_conc as lattice } from './lattice-rsp.js';
-import { kalloc_conc as kalloc } from './kalloc-rsp.js';
-
-
+const agreval = create_agreval(lattice_conc + kalloc_conc);
 const start = performance.now();
 for (const program of programs)
 {
   const src = program[0];
   // console.log(src);
   const expected = program[1];
-  const actualValues = greval(src);
+  const evaluator = agreval(src);
+  const actualValues = evaluator.result();
   if (actualValues.length !== 1)
   {
     if (program.length === 1) // no result specified, i.e. fail expected

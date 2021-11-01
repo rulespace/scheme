@@ -198,7 +198,7 @@ export function create_agreval(configSrc)
 {
   const evaluatorCtr = compileToConstructor(specification + configSrc);
  
-  return function agreval(src, options = {})
+  return function(src, options = {})
   {
     const evaluator = evaluatorCtr();
     // this is badly named, since there's also a 'debug' flag on the rsp compiler
@@ -259,13 +259,15 @@ class Evaluator
     return {states:[...states], transitions};
   }
 
-  *result()
+  result()
   {
     const evaluator = this.evaluator;
+    const result = [];
     for (const t of filterPred(evaluator.tuples(), 'evaluate'))
     {
-     yield t.t1;
+     result.push(t.t1);
     }
+    return result;
   }
 
   initialState()
