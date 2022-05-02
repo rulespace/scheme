@@ -216,7 +216,7 @@ SchemeReader.prototype.peek =
     {
       return null;
     }
-    var r = this.str.charAt(this.pos + 1);
+    var r = this.str[this.pos + 1] ?? ""; // used to be charAt
     return r;
   }
 
@@ -227,7 +227,7 @@ SchemeReader.prototype.read =
     {
       return null;
     }
-    var r = this.str.charAt(++this.pos);
+    var r = this.str[++this.pos] ?? ""; // used to be charAt
     if (r === "\n")
     {
       this.line++;
@@ -335,6 +335,10 @@ SchemeTokenizer.prototype.parse =
     if (c === ')' || c === ']')
     {
       throw new Error(`unexpected closing '${c}' at ${this.reader.line}:${this.reader.linePos}`)
+    }
+    if (typeof c === "object" && c.hasOwnProperty('tag')) // AST fragment
+    {
+      return c; // TODO: linePos
     }
     return this.parseIdentifier(c);
   }
@@ -530,6 +534,8 @@ SchemeTokenizer.prototype.skipWhitespace =
     }
     return c;
   }
+
+// console.log(new SchemeParser().parse("1"));
 
 
 // following stuff is language- (Scheme-) specific

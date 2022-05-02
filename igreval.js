@@ -1,9 +1,13 @@
 // import * as evaluator from './compiled/agreval_module.mjs';
+import { performance } from 'perf_hooks';
 import { assertTrue, MutableMaps, Sets } from '@rulespace/common';
 import { compileToConstructor, compileToModuleSrc, instance2dot, computeMeta } from '@rulespace/rulespace';
 import { SchemeParser, Sym, Pair } from './sexp-reader.js';
 
 import { specification } from './agreval-rsp.js';
+
+// import * as module from './compiled/agreval_module.mjs';
+
 
 export { lattice_conc, lattice_prim } from './lattice-rsp.js';
 export { kalloc_conc, kalloc_0cfa } from './kalloc-rsp.js';
@@ -177,6 +181,11 @@ function toModuleTuple(module, genericTuple)
   return new tupleCtr(...genericTuple.slice(1));
 }
 
+function toGenericTuple(moduleTuple)
+{
+  return [moduleTuple.constructor.name, ...moduleTuple.values()];
+}
+
 //@ deprecated
 function getTuples2(evaluator, pred)
 {
@@ -194,37 +203,28 @@ function* filterPred(tuples, pred)
   }
 }
 
-export function create_agreval(configSrc)
+export function create_igreval(configSrc)
 {
-  const evaluatorCtr = compileToConstructor(specification + configSrc);
+  const evaluatorCtr = compileToConstructor(specification + configSrc);//, {debug:true, assertions:true});
  
-  return function(src, options = {})
+  return function(ast, options = {}) // initial evaluation
   {
     const evaluator = evaluatorCtr();
-    // this is badly named, since there's also a 'debug' flag on the rsp compiler
-    const FLAG_debug = options.debug ?? false;
+    // const evaluator = module;
+    // // this is badly named, since there's also a 'debug' flag on the rsp compiler
+    // const FLAG_debug = options.debug ?? false;
+
     
-    const ast = new SchemeParser().parse(src);
-    const programTuples = ast2tuples(ast.car); 
-    //  console.log(programTuples.join('\n'));
+    // const ast = new SchemeParser().parse(src);
+    const programTuples = ast2tuples(ast); 
+    // console.log(programTuples.join('\n'));
     // console.log(programTuples.map(t => `\\rel{${t[0].substring(1)}}(${t.slice(1).join()})`).join(',\n'));
+
+    // const startInitialEvaluation = performance.now();
     evaluator.addTuples(programTuples.map(t => toModuleTuple(evaluator, t)));
+    // const durationInitialEvaluation = performance.now() - startInitialEvaluation;
+    // console.log(`initial evaluation ${durationInitialEvaluation}`);
 
-    const astrootTuples = getTuples2(evaluator, 'ast_root');
-    if (astrootTuples.length !== 1)
-    {
-      console.log("program:");
-      console.log(src);
-      console.log("\nevaluator tuples:")
-      console.log([...evaluator.tuples()].join('\n'));
-      throw new Error(`wrong number of 'astroot' tuples: ${astrootTuples.length}`);
-    }
-
-    if (FLAG_debug)
-    {
-      debug(evaluator);
-    }
-    
     return new Evaluator(evaluator);
   }
 }
@@ -233,6 +233,24 @@ class Evaluator
 {
   constructor(evaluator)
   {
+
+    // BEGIN checks and stuff
+    const astrootTuples = getTuples2(evaluator, 'ast_root');
+    if (astrootTuples.length !== 1)
+    {
+      console.log("program:");
+      console.log(evaluator._ast.toString());
+      console.log("\nevaluator tuples:")
+      console.log([...evaluator.tuples()].join('\n'));
+      throw new Error(`wrong number of 'astroot' tuples: ${astrootTuples.length}`);
+    }
+
+    // if (FLAG_debug)
+    // {
+    //   debug(evaluator);
+    // }
+    // END checks and stuff
+    
     this.evaluator = evaluator;
   }
 
@@ -298,6 +316,34 @@ class Evaluator
     }
     return result;  
   }
+
+  rootTag()
+  {
+    const evaluator = this.evaluator;
+    const result = [...filterPred(evaluator.tuples(), 'ast_root')];
+    if (result.length === 0)
+    {
+      throw new Error('no roots');
+    }
+    if (result.length > 1)
+    {
+      throw new Error('multiple roots');
+    }
+    return result[0].t0;  
+  }
+
+  parentTag(childTag)
+  {
+    const evaluator = this.evaluator;
+    for (const t of filterPred(evaluator.tuples(), 'parent'))
+    {
+      if (t.t0 === childTag)
+      {
+        return t.t1;
+      }
+    }
+    return null;
+  }
   
   astTuple(tag)
   {
@@ -328,7 +374,14 @@ class Evaluator
         case '$lit': return t.t1;
         case '$let': return `(let ((${helper(t.t1)} ${helper(t.t2)})) ${helper(t.t3)})`;
         case '$letrec': return `(letrec ((${helper(t.t1)} ${helper(t.t2)})) ${helper(t.t3)})`;
-        case '$lam': return `(lambda ... ${helper(t.t1)})`;
+        case '$lam': 
+        {
+          const lamTag = t.values()[0];
+          const params = evaluator.tuples().filter(t => t.name() === 'param' && t.values()[1] === lamTag);
+          params.sort((x, y) => x.values()[2] - y.values()[2]);
+          const paramTags = params.map(t => t.t0);
+          return `(lambda (${paramTags.map(helper).join(' ')}) ${helper(t.t1)})`;
+        }
         case '$if': return `(if ${helper(t.t1)} ${helper(t.t2)} ${helper(t.t3)})`;
         case '$set': return `(set! ${helper(t.t1)} ${helper(t.t2)})`;
         case '$cons': return `(cons ${helper(t.t1)} ${helper(t.t2)})`;
@@ -338,17 +391,11 @@ class Evaluator
         case '$setcdr': return `(set-cdr! ${helper(t.t1)} ${helper(t.t2)})`;
         case '$app':
           {
-            const randTuples = [];
-            for (const t_rand of filterPred(evaluator.tuples(), 'rand'))
-            {
-              if (t_rand.t1 === t.t0)
-              {
-                randTuples.push(t_rand);
-              }
-            }
-            randTuples.sort((ta, tb) => ta.t2 - tb.t2);
-            const rands = randTuples.map(t => t.t0);
-            return `(${helper(t.t1)} ${rands.map(helper).join(' ')})`;
+            const appTag = t.values()[0];
+            const rands = evaluator.tuples().filter(t => t.name() === 'rand' && t.values()[1] === appTag);
+            rands.sort((ta, tb) => ta.t2 - tb.t2);
+            const randTags = rands.map(t => t.t0);
+            return `(${helper(t.t1)} ${randTags.map(helper).join(' ')})`;
           }
         default: throw new Error(t.constructor.name);
       }
@@ -357,13 +404,31 @@ class Evaluator
     return helper(tag);
   }
 
-  evaluate(exp, state)
+  print(result)
+  {
+    if (typeof result === 'object')
+    {
+      switch (result.name())
+      {
+        case 'obj':
+          {
+            const tag = result.values()[0];
+            return this.expToString(tag); 
+          }
+        default:
+          throw new Error(`cannot handle tuple ${result}`);
+      }
+    }
+    return String(result);
+  }
+
+  valueOf(tag, state)
   {
     const evaluator = this.evaluator;
     const result = [];
     for (const t of filterPred(evaluator.tuples(), 'greval'))
     {
-      if (t.t0 === exp && t.t1 === state)
+      if (t.t0 === tag && t.t1 === state)
       {
         result.push(t.t2);
       }
@@ -375,177 +440,180 @@ class Evaluator
   {
     return computeMeta(this.evaluator);
   }
+
+  deltaEvaluate(delta) // incremental evaluation
+  {
+    
+    // const startDeltaEvaluation = performance.now();
+    const tuples = this.tuples().filter(isAstTuple);
+
+    console.log('module ast tuples');
+    for (const t of tuples)
+    {
+      console.log(`${t}`);
+    }
+
+    const tupleMap1 = toMtTupleMap(tuples);
+
+    console.log('tuple map 1');
+    for (const [k, v] of tupleMap1)
+    {
+      console.log(`${k} -> ${v}`);
+    }
+
+    const addTuples = [];
+    const removeTuples = [];
+
+    const evaluator = this.evaluator;
+
+
+    function insertParam(lamTag, currentParams, insertPosition, paramAst)
+    {
+      // insert new param tuple
+      addTuples.push(toModuleTuple(evaluator, paramAst));
+      addTuples.push(toModuleTuple(evaluator, ['param', paramAst[1], lamTag, insertPosition]));
+      // remove all params at and after insertion point
+      // shift param tuples at and after insertion point
+      for (let i = insertPosition; i < currentParams.length; i++)
+      {
+        removeTuples.push(currentParams[i]);
+        addTuples.push(toModuleTuple(evaluator, ['param', currentParams[i].values()[0], currentParams[i].values()[1], currentParams[i].values()[2] + 1]));
+      }
+    }
+
+    function insertRand(randTag, currentRands, insertPosition, randAst) // cloned from insertParam
+    {
+      // insert new rand tuple
+      addTuples.push(toModuleTuple(evaluator, randAst));
+      addTuples.push(toModuleTuple(evaluator, ['rand', randAst[1], randTag, insertPosition]));
+      // remove all rands at and after insertion point
+      // shift rand tuples at and after insertion point
+      for (let i = insertPosition; i < currentRands.length; i++)
+      {
+        removeTuples.push(currentRands[i]);
+        addTuples.push(toModuleTuple(evaluator, ['rand', currentRands[i].values()[0], currentRands[i].values()[1], currentRands[i].values()[2] + 1]));
+      }
+    }
+
+    for (const d of delta)
+    {
+      switch (d[0])
+      {
+        case 'modify': // tag, newValue
+        {
+          const mt = tupleMap1.get(d[1]);
+          assertTrue(mt.name() === '$id' || mt.name() === '$lit');
+          removeTuples.push(mt);
+          addTuples.push(toModuleTuple(this.evaluator, [mt.name(), mt.values()[0], d[2]]));
+          break;
+        }
+        case 'add': // before tag, ...new ast
+        {
+          // const newMts = d.slice(2).map(t => toModuleTuple(this.evaluator, [t[0], ...t.slice(1)]));
+
+          const beforeMt = tupleMap1.get(d[1][1]);
+          switch (beforeMt.name())
+          {
+            case '$id':
+            case '$lit':
+            {
+              const parentTag = this.parentTag(d[1][1]);
+              const parentMTuple = this.astTuple(parentTag);  
+              switch (parentMTuple.name())
+              {
+                case '$lam':  // TODO: assert beforeMt cannot be $lit
+                {
+                  // inserting or appending param (not pos 0)
+                  const beforeTag = d[1][1]; 
+                  const currentParams = tuples.filter(mt => mt.name() === 'param' && mt.values()[1] === parentTag);
+                  currentParams.sort((x, y) => x.values()[2] - y.values()[2]);
+                  let currentPosition;
+                  for (currentPosition = 0; currentPosition < currentParams.length; currentPosition++)
+                  {
+                    if (currentParams[currentPosition].values()[0] === beforeTag)
+                    {
+                      break;
+                    }
+                  }
+                  const insertPosition = currentPosition + 1;
+                  insertParam(parentTag, currentParams, insertPosition, d[2]);
+                  break;
+                }
+                case '$app':
+                {
+                  // inserting or appending rand (not pos 0)
+                  const beforeTag = d[1][1]; 
+                  const currentRands = tuples.filter(mt => mt.name() === 'rand' && mt.values()[1] === parentTag);
+                  currentRands.sort((x, y) => x.values()[2] - y.values()[2]);
+                  let currentPosition;
+                  for (currentPosition = 0; currentPosition < currentRands.length; currentPosition++)
+                  {
+                    if (currentRands[currentPosition].values()[0] === beforeTag)
+                    {
+                      break;
+                    }
+                  }
+                  const insertPosition = currentPosition + 1;
+                  insertRand(parentTag, currentRands, insertPosition, d[2]);
+                  break;
+                }
+                default: throw new Error(`cannot handle parent ${parentMTuple} for delta ${d}`);
+              }
+              break;
+            }
+            case '$lam': 
+            {
+              // prepending param (pos 0)
+              const lamTag = d[1][1];
+              const currentParams = tuples.filter(mt => mt.name() === 'param' && mt.values()[1] === lamTag);
+              insertParam(lamTag, currentParams, 0, d[2]);
+              break;
+            }
+            default: throw new Error(`cannot handle add after tuple ${beforeMt} in ${d}`);
+          }
+          break;
+        }
+        default: throw new Error(`cannot handle delta operation ${d}`);
+      }
+    }
+    
+    console.log(`add ${addTuples.join(' ')}`);
+    console.log(`rem ${removeTuples.join(' ')}`);
+
+
+    this.evaluator.addTuples(addTuples);
+    this.evaluator.removeTuples(removeTuples);
+    // const durationDeltaEvaluation = performance.now() - startDeltaEvaluation;
+    // console.log(`delta evaluation ${durationDeltaEvaluation}`);
+    return new Evaluator(this.evaluator);
+  }
 }
 
-function debug(evaluator)
+function isAstTuple(moduleTuple)
 {
-  const tuples = [...evaluator.tuples()];
-
-  console.log(tuples.join('\n'));
-  // console.log(instance2dot(evaluator));
-
-  function tupleToString(t)
-  {
-    const pred = t.constructor.name;
-    switch (pred)
-    {
-      case 'state':
-        return `${expToString(t.t0)} ${t.t1}`;
-      default: return String(t);
-    }
-  }
-
-  const seen = new Set();
-  assertTrue(getTuples2(evaluator, 'initial_state').length === 1);
-  const initial = getTuples2(evaluator, 'initial_state')[0].t0;
-  const todo = [initial];
-  while (todo.length > 0)
-  {
-    const current = todo.pop();
-    if (seen.has(current))
-    {
-      continue;
-    }
-    seen.add(current);
-    console.log(`\n====\n${current} ${tupleToString(current)}`);
-
-    for (const t of tuples)
-    {
-      if (t.constructor.name === 'env' && t.t1 === current)
-      {
-        const name = t.t0;
-        const addr = t.t2;
-        console.log(`env ${name} ${addr}`);
-      }
-    }
-
-    for (const t of tuples)
-    {
-      if (t.constructor.name === 'lookup_path_root' && t.t2 === current)
-      {
-        const exp = t.t0;
-        const path = t.t1;
-        const addr = t.t3;
-        console.log(`lookup_path_root |${expToString(exp)}| ${path} ${addr}`);
-      }
-    }
-
-    for (const t of tuples)
-    {
-      if ((t.constructor.name === 'modifies_var' || t.constructor.name === 'modifies_path') && t.t2 === current)
-      {
-        const e_upd = t.t0;
-        const addr = t.t1;
-        console.log(`${t.constructor.name} |${expToString(e_upd)}| ${addr}`);
-      }
-    }
-
-    for (const t of tuples)
-    {
-      if ((t.constructor.name === 'eval_var_root' || t.constructor.name === 'eval_path_root') && t.t1 === current)
-      {
-        const addr = t.t0;
-        const val = t.t2;
-        console.log(`${t.constructor.name} ${addr} ${val}`);
-      }
-    }
-
-    for (const t of tuples)
-    {
-      if (t.constructor.name === 'greval' && t.t1 === current)
-      {
-        const exp = t.t0;
-        const val = t.t2;
-        console.log(`greval |${expToString(tuples, exp)}| ${val}`);
-      }
-    }
-
-    for (const t_step of tuples)
-    {
-      if (t_step.constructor.name === 'step' && t_step.t0 === current)
-      {
-        const succ = t_step.t1;
-        todo.push(succ);
-        console.log(`-> ${succ}`);
-      }
-    }
-  }
+  const name = moduleTuple.name();
+  return name.startsWith('$') || name === 'param' || name === 'rand';
 }
 
-// function createMetaInstance()
-// {
-//   const meta = metaInstance(evaluator);
-//   deltaSource(evaluator).addDeltaObserver({
-//     observe(delta)
-//     {
-//       meta.addTupleMap(delta.added());
-//       meta.removeTupleMap()
-//     }
-//   })
-// }
-
-// function dotFlowGraph(evaluator, nodeToString)
-// {
-//   const todo = [initialState(evaluator)];
-//   const nodes = [];
-//   const transitions = new Map();
-//   while (todo.length > 0)
-//   {
-//     const current = todo.pop();
-//     let index = nodes.indexOf(current);
-//     if (index > -1)
-//     {
-//       continue;
-//     }
-//     nodes.push(current);
-//     for (const succ of successorStates(evaluator, current))
-//     {
-//       MutableMaps.putPushArray(transitions, current, succ);
-//       todo.push(succ);
-//     }
-//   }
-//   const dotNodes = nodes.map((node, i) => `${i} [label="${nodeToString(node)}"];`);
-//   const dotTransitions = [];
-//   for (const [source, dests] of transitions)
-//   {
-//     const tagSource = nodes.indexOf(source);
-//     for (const dest of dests)
-//     {
-//       dotTransitions.push(`${tagSource} -> ${nodes.indexOf(dest)}`);
-//     }
-//   }
-
-//   return `
-//   digraph G {
-//     node [style=filled,fontname="Roboto Condensed"];
-
-//     ${dotNodes.join('\n')}
-
-//     ${dotTransitions.join('\n')}
-
-//   }
-//   `;
-// }
-
-
-// export function dotProvenanceGraph()
-// {
-//   return instance2dot(evaluator);
-// }
-
-// import { lattice_conc as lattice } from './lattice-rsp.js';
-// import { kalloc_conc as kalloc } from './kalloc-rsp.js';
-
-// const agreval = create_agreval(lattice + kalloc);
-// const start = Date.now();
-// const evaluator = agreval(`
-
-// (let ((x 10)) x)
-
-
-// `, {debug:false});
-// console.log(`${Date.now() - start} ms`);
-// console.log([...evaluator.result()]);
-// // console.log(dotFlowGraph(evaluator, t => `${evaluator.expToString(t.t0)} | ${t.t1} | ${evaluator.evaluate(t.t0, t)}`));
-// // console.log(dotProvenanceGraph());
+function toMtTupleMap(mtuples)
+{
+  const tupleMap = new Map();
+  for (const mt of mtuples)
+  {
+    const t = toGenericTuple(mt);
+    if (t[0].startsWith('$'))
+    {
+      tupleMap.set(t[1], mt); // module tuple!
+    }
+    else if (t[0] === 'param' || t[0] === 'rand')
+    {
+      tupleMap.set(`${t[2]}-${t[3]}`, mt); // module tuple!
+    }
+    else
+    {
+      throw new Error(`cannot handle tuple ${t}`);
+    }
+  }
+  return tupleMap;
+}
 

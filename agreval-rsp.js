@@ -162,7 +162,7 @@ export const specification = `
         
 
 ; graph evaluator
-(rule [atomic e e] [$lit e _])
+(rule [atomic e e] [$lit e _]) ; this also includes names in bindings and assignment e.g. (let ((*x* ...))) (set! *x* ...)?
 (rule [atomic e e] [$id e _])
 (rule [atomic e e] [$lam e _])
 (rule [atomic e_rator e] [$app e e_rator])
