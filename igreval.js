@@ -1,9 +1,7 @@
 // import * as evaluator from './compiled/agreval_module.mjs';
-import { performance } from 'perf_hooks';
-import { assertTrue, MutableMaps, Sets } from '@rulespace/common';
-import { compileToConstructor, compileToModuleSrc, instance2dot, computeMeta } from '@rulespace/rulespace';
-import { SchemeParser, Sym, Pair } from './sexp-reader.js';
-
+import { assertTrue, 
+  compileToConstructor, compileToModuleSrc, instance2dot, computeMeta } from './deps.ts';
+import { Sym, Pair } from './sexp-reader.js';
 import { specification } from './agreval-rsp.js';
 
 // import * as module from './compiled/agreval_module.mjs';
@@ -344,13 +342,19 @@ class Evaluator
     }
     return null;
   }
+
+  isAstTuple(moduleTuple)
+  {
+    const name = moduleTuple.name();
+    return name.startsWith('$') || name === 'param' || name === 'rand';
+  }
   
   astTuple(tag)
   {
     const evaluator = this.evaluator;
     for (const t of evaluator.tuples())
     {
-      if (t.name().startsWith('$'))
+      if (this.isAstTuple(t))
       {
         if (t.t0 === tag)
         {
@@ -445,13 +449,13 @@ class Evaluator
   {
     
     // const startDeltaEvaluation = performance.now();
-    const tuples = this.tuples().filter(isAstTuple);
+    const tuples = this.tuples().filter(this.isAstTuple);
 
-    console.log('module ast tuples');
-    for (const t of tuples)
-    {
-      console.log(`${t}`);
-    }
+    // console.log('module ast tuples');
+    // for (const t of tuples)
+    // {
+    //   console.log(`${t}`);
+    // }
 
     const tupleMap1 = toMtTupleMap(tuples);
 
@@ -481,11 +485,11 @@ class Evaluator
       }
     }
 
-    function insertRand(randTag, currentRands, insertPosition, randAst) // cloned from insertParam
+    function insertRand(appTag, currentRands, insertPosition, randAst) // cloned from insertParam
     {
       // insert new rand tuple
       addTuples.push(toModuleTuple(evaluator, randAst));
-      addTuples.push(toModuleTuple(evaluator, ['rand', randAst[1], randTag, insertPosition]));
+      addTuples.push(toModuleTuple(evaluator, ['rand', randAst[1], appTag, insertPosition]));
       // remove all rands at and after insertion point
       // shift rand tuples at and after insertion point
       for (let i = insertPosition; i < currentRands.length; i++)
@@ -541,20 +545,29 @@ class Evaluator
                 }
                 case '$app':
                 {
-                  // inserting or appending rand (not pos 0)
+                  // inserting or appending rand (can be pos 0 if inserting at `(f * <op> <op>)` )
                   const beforeTag = d[1][1]; 
-                  const currentRands = tuples.filter(mt => mt.name() === 'rand' && mt.values()[1] === parentTag);
-                  currentRands.sort((x, y) => x.values()[2] - y.values()[2]);
-                  let currentPosition;
-                  for (currentPosition = 0; currentPosition < currentRands.length; currentPosition++)
+                  const operatorTag = parentMTuple.values()[1];
+                  if (beforeTag === operatorTag) // inserting rand at pos 0
                   {
-                    if (currentRands[currentPosition].values()[0] === beforeTag)
-                    {
-                      break;
-                    }
+                    const currentRands = tuples.filter(mt => mt.name() === 'rand' && mt.values()[1] === parentTag);
+                    insertRand(parentTag, currentRands, 0, d[2]);      
                   }
-                  const insertPosition = currentPosition + 1;
-                  insertRand(parentTag, currentRands, insertPosition, d[2]);
+                  else // for 'pos 0', could also scan rands and if not found then pos 0
+                  {
+                    const currentRands = tuples.filter(mt => mt.name() === 'rand' && mt.values()[1] === parentTag);
+                    currentRands.sort((x, y) => x.values()[2] - y.values()[2]);
+                    let currentPosition;
+                    for (currentPosition = 0; currentPosition < currentRands.length; currentPosition++)
+                    {
+                      if (currentRands[currentPosition].values()[0] === beforeTag)
+                      {
+                        break;
+                      }
+                    }
+                    const insertPosition = currentPosition + 1;
+                    insertRand(parentTag, currentRands, insertPosition, d[2]);  
+                  }
                   break;
                 }
                 default: throw new Error(`cannot handle parent ${parentMTuple} for delta ${d}`);
@@ -587,12 +600,6 @@ class Evaluator
     // console.log(`delta evaluation ${durationDeltaEvaluation}`);
     return new Evaluator(this.evaluator);
   }
-}
-
-function isAstTuple(moduleTuple)
-{
-  const name = moduleTuple.name();
-  return name.startsWith('$') || name === 'param' || name === 'rand';
 }
 
 function toMtTupleMap(mtuples)

@@ -1,16 +1,9 @@
 // import * as evaluator from './compiled/agreval_module.mjs';
-import { assertTrue, MutableMaps, Sets } from '@rulespace/common';
-import { compileToConstructor, compileToModuleSrc, instance2dot, computeMeta } from '@rulespace/rulespace';
+import { assertTrue, compileToConstructor, computeMeta } from './deps.ts';
 import { SchemeParser, Sym, Pair } from './sexp-reader.js';
-
-import { specification } from './agreval-rsp.js';
 
 export { lattice_conc, lattice_prim } from './lattice-rsp.js';
 export { kalloc_conc, kalloc_0cfa } from './kalloc-rsp.js';
-export { specification as semantics_scheme };
-export { computeMeta };
-
-export { instance2dot };
 
 function param2tuples(lam)
 {
@@ -194,9 +187,9 @@ function* filterPred(tuples, pred)
   }
 }
 
-export function create_agreval(configSrc)
+export function create_agreval(specification, configSrc)
 {
-  const evaluatorCtr = compileToConstructor(specification + configSrc);
+  const evaluatorCtr = compileToConstructor(specification + configSrc, {debug:false});
  
   return function(src, options = {})
   {
@@ -241,6 +234,11 @@ class Evaluator
   tuples()
   {
     return this.evaluator.tuples();
+  }
+
+  why(tuple)
+  {
+    return [...tuple._inproducts].join();
   }
   
   //
@@ -533,6 +531,10 @@ function debug(evaluator)
 //   return instance2dot(evaluator);
 // }
 
+
+////
+
+
 // import { lattice_conc as lattice } from './lattice-rsp.js';
 // import { kalloc_conc as kalloc } from './kalloc-rsp.js';
 
@@ -540,12 +542,12 @@ function debug(evaluator)
 // const start = Date.now();
 // const evaluator = agreval(`
 
-// (let ((x 10)) x)
+// (let ((x 123)) (let ((u (let ((y "dummy")) (let ((x #f)) "dummy2")))) x))
 
-
-// `, {debug:false});
+// `);
 // console.log(`${Date.now() - start} ms`);
 // console.log([...evaluator.result()]);
 // // console.log(dotFlowGraph(evaluator, t => `${evaluator.expToString(t.t0)} | ${t.t1} | ${evaluator.evaluate(t.t0, t)}`));
-// // console.log(dotProvenanceGraph());
+// console.log(evaluator.computeFlowGraph().transitions.map(t => evaluator.expToString(t[0].t0) + ' -> ' + evaluator.expToString(t[1].t0)).join());
+// console.log(evaluator.tuples().map(t => `${t}: ${evaluator.why(t)}`).join('\n'));
 

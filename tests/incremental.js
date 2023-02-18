@@ -3,7 +3,7 @@ import { kalloc_conc } from '../kalloc-rsp.js';
 import { lattice_conc } from '../lattice-rsp.js';
 import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
 import { diff } from '../differ.js';
-import { assertTrue } from '@rulespace/common';
+import { assertTrue } from '../deps.ts';
 
 
 const parser = new SchemeParser();
@@ -52,7 +52,10 @@ function test(src1, src2)
   const src2_ = eval2.expToString(eval2.rootTag());
   console.log(`src2_  ${src2_}`);
   console.log(`src1d_ ${src1d_}`);
-  assertTrue(src1d_ === src2_);
+  if (src1d_ !== src2_)
+  {
+    throw new Error(`src2 does not match src1d`);
+  }
 
   const result1d = eval1d.result();
   //console.log(instance2dot(eval1d.evaluator));
@@ -71,6 +74,7 @@ function test(src1, src2)
 
 test(`1`, `2`);
 test(`1`, `1`);
+test(`#t`, `#f`);
 test(`(let ((x 1)) x)`, `(let ((x 2)) x)`);
 test(`(let ((x 1)) (let ((y 2)) x))`, `(let ((x 1)) (let ((y 2)) y))`);
 test(`(let ((x #t)) (if x 1 2))`, `(let ((x #f)) (if x 1 2))`);
@@ -82,13 +86,14 @@ test(`(let ((f (lambda (x) x))) (f 1))`, `(let ((f (lambda (x) x))) (f 2))`);
 test(`(let ((f (lambda (x) x))) (f 1))`, `(let ((f (lambda (y) y))) (f 1))`);
 test(`(+ 1 1)`, `(+ 1 2)`);
 
-// test(`(lambda (x) x)`, `(lambda (x y) x)`);
-// test(`(lambda (x y) (+ x y))`, `(lambda (x z y) (+ x y))`);
-// test(`(lambda (x y) (+ x y))`, `(lambda (z x y) (+ x y))`);
+test(`(lambda (x) x)`, `(lambda (x y) x)`);
+test(`(lambda (x y) (+ x y))`, `(lambda (x z y) (+ x y))`);
+test(`(lambda (x y) (+ x y))`, `(lambda (z x y) (+ x y))`);
 
-// test(`(let ((f (lambda (x) x))) (f 1))`, `(let ((f (lambda (x y) x))) (f 1 2))`);
-// test(`(let ((f (lambda (x y) (+ x y)))) (f 1 2))`, `(let ((f (lambda (x z y) (+ x y)))) (f 1 99 2))`);
-//test(`(let ((f (lambda (x y) (+ x y)))) (f 1 2))`, `(let ((f (lambda (z x y) (+ x y)))) (f 99 1 2))`);
+test(`(let ((f (lambda (x) x))) (f 1))`, `(let ((f (lambda (x y) x))) (f 1 2))`);
+test(`(let ((f (lambda (x y) (+ x y)))) (f 1 2))`, `(let ((f (lambda (x z y) (+ x y)))) (f 1 99 2))`);
+test(`(let ((f (lambda (x y) (+ x y)))) (f 1 2))`, `(let ((f (lambda (z x y) (+ x y)))) (f 99 1 2))`);
+
 
 // test(`'hello`, `'hello`) does not work (no support in greval)
 
@@ -101,7 +106,5 @@ test(`(+ 1 1)`, `(+ 1 2)`);
 // 	  (+ a b c)))`, 
  // ANF);
 
-        
-                                
 
 

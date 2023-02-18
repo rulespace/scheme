@@ -214,7 +214,7 @@ function diff(p1, p2)
 
     if (cost > minCost)
     {
-      console.log(`minCost ${minCost} killing ${cost}: ${choices.join(' ')}`);
+      // console.log(`minCost ${minCost} killing ${cost}: ${choices.join(' ')}`);
       continue;
     }
 
@@ -260,28 +260,9 @@ function diff(p1, p2)
     }
     else
     { 
-      const prevChoice = choices.at(-1);
-      if (prevChoice !== undefined && prevChoice[0] === 'newL')
-      {
-        const newChoices = choices.slice(0, -1);
-        newChoices.push(['newL', prevChoice[1] + 1]);
-        todo.push([newChoices, i + 1, j, cost + 100]);
-      }
-      else
-      {
-        todo.push([choices.concat([['newL', 1]]), i+1, j, cost + 100]);
-      }
-
-      if (prevChoice !== undefined && prevChoice[0] === 'newR')
-      {
-        const newChoices = choices.slice(0, -1);
-        newChoices.push(['newR', prevChoice[1] + 1]);
-        todo.push([newChoices, i, j + 1, cost + 100]);
-      }
-      else
-      {
-        todo.push([choices.concat([['newR', 1]]), i, j+1, cost + 100]);
-      }
+      // const prevChoice = choices.at(-1);
+      todo.push([choices.concat([['newL', 1]]), i+1, j, cost + 100]);
+      todo.push([choices.concat([['newR', 1]]), i, j+1, cost + 100]);
 
       if (left[0] === '$id' && left[0] === right[0] && left[2] !== right[2])
       {
@@ -364,14 +345,14 @@ function diff(p1, p2)
         case 'newL':
         {
           const length = choice[1];
-          edits.push(['remove', n1s.slice(i, i + length)]);
+          edits.push(['remove', n1s[i]]);
           i += length;
           break;
         }
         case 'newR':
         {
           const length = choice[1];
-          edits.push(['add', n1s[i-1], n2s.slice(j, j + length)]); // the -1 makes it an 'add n2s after n1s[i-1]'
+          edits.push(['add', n1s[i-1], n2s[j]]); // the -1 makes it an 'add n2s after n1s[i-1]'
           j += length;
           break;
         }

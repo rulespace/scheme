@@ -1,8 +1,8 @@
 import programs from './test-programs.js';
+import { specification } from '../agreval-rsp.js';
 import { create_agreval, lattice_conc, kalloc_conc } from '../agreval.js';
-import { performance } from 'perf_hooks';
 
-const agreval = create_agreval(lattice_conc + kalloc_conc);
+const agreval = create_agreval(specification, lattice_conc + kalloc_conc);
 const start = performance.now();
 for (const program of programs)
 {
@@ -19,8 +19,8 @@ for (const program of programs)
     }
     console.log("program:");
     console.log(src);
-    // console.log("\nevaluator tuples:")
-    // console.log([...evaluator.tuples()].join('\n'));
+    console.log("\nevaluator tuples:")
+    console.log([...evaluator.tuples()].join('\n'));
     throw new Error(`wrong number of result values: ${actualValues.length}`);
   }
   const actual = actualValues[0];

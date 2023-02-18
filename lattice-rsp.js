@@ -31,6 +31,5 @@ export const lattice_prim = `
 (rule [prim_binding "not" (lambda (x) "prim") 1])
 (rule [prim_binding "even?" (lambda (x) "prim") 1])
 
-
 `
 

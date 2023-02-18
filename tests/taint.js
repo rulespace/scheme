@@ -1,4 +1,4 @@
-import { compileToConstructor } from '../../rulespace/utils.js';
+import { compileToConstructor, instance2dot } from '../deps.ts';
 import { create_agreval, lattice_conc, kalloc_conc } from '../agreval.js';
 
 const taintRsp = `
@@ -42,6 +42,7 @@ function analyze(program)
   const evaluator = agreval(program);
   const resultValues = [...evaluator.result()];
   console.log(`evaluation results: ${resultValues}`);
+  console.log(instance2dot(evaluator.evaluator));
   const metaTuples = [...evaluator.meta().tuples()];
   console.log(`${metaTuples.length} meta tuples`);
   const meta = compileToConstructor(taintRsp)();
@@ -78,7 +79,9 @@ function slice(program, criterion)
   console.log(`criterion nodes: ${criterionGrevalNodes}`);
 
   const ifLinks = meta.tuples().filter(t => t.name() === 'InformationFlow');
+  console.log("if links:");
   console.log(ifLinks.map(l => `${evaluator.expToString(l.t0.t0)} -> ${evaluator.expToString(l.t1.t0)}`).join('\n'));
+  console.log("---");
 
   function nextFlow(tuple)
   {
@@ -115,10 +118,20 @@ function slice(program, criterion)
 }
 
 
+// slice(`
+// (let ((x 123))
+//   x)
+// `, 'x');
+
+
+// slice(`
+// (let ((y 123))
+//   (let ((x y))
+//     x))
+// `, 'x');
+
 slice(`
-(let ((y 123))
-  (let ((x y))
+(let ((f (lambda () 123)))
+  (let ((x (f)))
     x))
 `, 'x');
-
-

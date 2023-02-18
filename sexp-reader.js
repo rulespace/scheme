@@ -1,4 +1,4 @@
-import {Characters, assertFalse} from '@rulespace/common';
+import {Characters, assertFalse} from './deps.ts';
 
 let __nodeCounter__ = 0;
 

@@ -1,6 +1,6 @@
 import fs from 'fs';
-import { compileToRsp, rsp2latex } from 'rulespace';
-import { specification } from '../greval-rsp.js';
+import { compileToRsp, rsp2latex } from '@rulespace/rulespace';
+import { specification } from '../agreval-rsp.js';
 
 const rsp = compileToRsp(specification);
 const latexRules = rsp2latex(rsp);
