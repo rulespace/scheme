@@ -1,4 +1,7 @@
+import { assertTrue } from './deps.ts';
 import { Null, Pair, SchemeParser, Sym } from './sexp-reader.js';
+
+export { diff, diffAst, ast2tuples, nodeMap }
 
 function ast2tuples(ast)
 {
@@ -174,14 +177,19 @@ function nodeMap(ts)
   return m;
 }
 
-function diff(p1, p2)
+function diffAst(p1, p2)
 {
-  const start = performance.now();
-
   const n1s = ast2tuples(p1);
   const n2s = ast2tuples(p2);
 
   console.log(`p1 exploded tuples\n${n1s.join('\n')}`);
+
+  return diff(n1s, n2s);
+}
+
+function diff(n1s, n2s)
+{
+  const start = performance.now();
 
   const n1map = nodeMap(n1s);
   const n2map = nodeMap(n2s);
@@ -206,11 +214,7 @@ function diff(p1, p2)
     //   console.log(`${leafs.length} solutions, current top ${leafs[0].join(' ')}`);  
     // }
 
-    const current = todo.pop();
-    const choices = current[0];
-    const i = current[1];
-    const j = current[2];
-    const cost = current[3];
+    const [choices, i, j, cost] = todo.pop();
 
     if (cost > minCost)
     {
@@ -221,7 +225,7 @@ function diff(p1, p2)
     if (i === n1s.length && j === n2s.length)
     {
       leafs.push([choices, cost]);
-      minCost = Math.min(minCost, cost);
+      minCost = Math.min(minCost, cost); // TODO: check: actually minCost = cost (because of earlier test)
       continue;
     }
 
@@ -243,16 +247,15 @@ function diff(p1, p2)
     const matches = subtreeMatches(left, n1map, right, n2map);
     if (matches > 0)
     {
-      // todo.push([choices.concat([['match', matches]]), i+matches, j+matches]);
-      // pushMatch
-      const prevChoice = choices.at(-1);
-      if (prevChoice !== undefined && prevChoice[0] === 'match')
-      {
-        const newChoices = choices.slice(0, -1);
-        newChoices.push(['match', prevChoice[1] + matches]);
-        todo.push([newChoices, i + matches, j + matches, cost]);
-      }
-      else
+      // // pushMatch
+      // const prevChoice = choices.at(-1);
+      // if (prevChoice !== undefined && prevChoice[0] === 'match')
+      // {
+      //   const newChoices = choices.slice(0, -1);
+      //   newChoices.push(['match', prevChoice[1] + matches]);
+      //   todo.push([newChoices, i + matches, j + matches, cost]);
+      // }
+      // else
       {
         todo.push([choices.concat([['match', matches]]), i+matches, j+matches, cost]);
       }
@@ -261,8 +264,28 @@ function diff(p1, p2)
     else
     { 
       // const prevChoice = choices.at(-1);
-      todo.push([choices.concat([['newL', 1]]), i+1, j, cost + 100]);
-      todo.push([choices.concat([['newR', 1]]), i, j+1, cost + 100]);
+
+      // if (prevChoice !== undefined && prevChoice[0] === 'newL')
+      // {
+      //   const newChoices = choices.slice(0, -1);
+      //   newChoices.push(['newL', prevChoice[1] + 1]);
+      //   todo.push([newChoices, i + 1, j, cost + 100]);
+      // }
+      // else
+      {
+        todo.push([choices.concat([['newL', 1]]), i+1, j, cost + 100]);
+      }
+
+      // if (prevChoice !== undefined && prevChoice[0] === 'newR')
+      // {
+      //   const newChoices = choices.slice(0, -1);
+      //   newChoices.push(['newR', prevChoice[1] + 1]);
+      //   todo.push([newChoices, i, j + 1, cost + 100]);
+      // }
+      // else
+      {
+        todo.push([choices.concat([['newR', 1]]), i, j+1, cost + 100]);
+      }
 
       if (left[0] === '$id' && left[0] === right[0] && left[2] !== right[2])
       {
@@ -277,14 +300,14 @@ function diff(p1, p2)
         if (left[0] === '$let' || left[0] === '$if' || left[0] === '$lam' || left[0] === '$app')
         {
           // pushMatch
-          const prevChoice = choices.at(-1);
-          if (prevChoice !== undefined && prevChoice[0] === 'match')
-          {
-            const newChoices = choices.slice(0, -1);
-            newChoices.push(['match', prevChoice[1] + 1]);
-            todo.push([newChoices, i + 1, j + 1, cost]);
-          }
-          else
+          // const prevChoice = choices.at(-1);
+          // if (prevChoice !== undefined && prevChoice[0] === 'match')
+          // {
+          //   const newChoices = choices.slice(0, -1);
+          //   newChoices.push(['match', prevChoice[1] + 1]);
+          //   todo.push([newChoices, i + 1, j + 1, cost]);
+          // }
+          // else
           {
             todo.push([choices.concat([['match', 1]]), i+1, j+1, cost]);
           }
@@ -294,85 +317,179 @@ function diff(p1, p2)
     }
   }
 
-  // function cost(choices)
-  // {
-
-  //   function individualCost(choice)
-  //   {
-  //     switch (choice[0])
-  //     {
-  //       case 'match': return 0;
-  //       case 'modify': return 1;
-  //       case 'newL': return Math.round((choice[1] * 100) + Math.sqrt(choice[1] * 100));
-  //       case 'newR': return Math.round((choice[1] * 100) + Math.sqrt(choice[1] * 100));
-  //       default: throw new Error(`cannot handle choice ${choice[0]}`)
-  //     }
-  //   }
-
-  //   return choices.reduce((acc, x) => acc += individualCost(x), 0);
-  // }
-
-  leafs.sort((a, b) => a[1] - b[1]);
+  leafs.sort((a, b) => a[1] - b[1]); // TODO: dynamically track shortest instead of post-sort
   const duration = performance.now() - start;
 
   // console.log(leafs.map(e => [e, cost(e)]).slice(0, 100).join('\n'));
   console.log(`solutions ${leafs.length} duration ${duration}`);
 
   const [topChoices, cost] = leafs[0];
-  console.log(`top choices ${topChoices.join(' ')}`);
+  console.log(`top choices (cost ${cost}):\n${topChoices.join('\n')}`);
   
+////////////////////////////////
+
+
   let i = 0;
   let j = 0;
 
+  const stack = [];
   const edits = [];
   for (const choice of topChoices)
   {
+    console.log(`${i} ${n1s[i]} ${choice[0]} ${j} ${n2s[j]}`);
+    // console.log(`stack ${stack.join(' ')}`);
+
+    const currentExp = stack.length === 0 ? null : stack.at(-1)[0];
+    const currentSubexpressionPos = currentExp === null ? -1 : stack.at(-1)[1];
+    const currentSubexpression = currentExp === null ? null : currentExp[currentSubexpressionPos + 2]; // skip type and tag
+
     switch (choice[0])
     {
+
       case 'match':
+      {
+        if (stack.length > 0)
         {
-          i += choice[1];
-          j += choice[1];
-          break;
+          // match, so left takes precedence: overwrite current subexp tag with left tag (they may already match)
+          if (currentSubexpression !== n1s[i][1])
+          {
+            if (stack.at(-1)[2] === 'match')
+            {
+              edits.push(['modify', currentExp[1], currentSubexpressionPos, n1s[i][1]]);        
+            }
+            else
+            {
+              currentExp[currentSubexpressionPos + 2] = n1s[i][1];
+            }  
+          }
+          stack.at(-1)[1]++;
+          if (currentSubexpressionPos + 1 === currentExp.length - 2)
+          {
+            if (stack.at(-1)[2] === 'newR')
+            {
+              edits.push(['add', currentExp]);        
+            }
+            stack.pop();
+          }
         }
-        case 'modify':
+        
+        if (n1s[i][0] !== '$lit' && n1s[i][0] !== '$id')
         {
-          edits.push(['modify', n1s[i][1], n2s[j][2]]);
-          i++;
-          j++;
-          break;
+          stack.push([n1s[i].slice(0), 0, 'match']);
         }
-        case 'newL':
+        i += choice[1];
+        j += choice[1];
+        break;
+      }
+      case 'modify':
+      {
+        edits.push(['modify', n1s[i][1], 0, n2s[j][2]]);
+        if (stack.length > 0)
         {
-          const length = choice[1];
-          edits.push(['remove', n1s[i]]);
-          i += length;
-          break;
+          stack.at(-1)[1]++;
         }
-        case 'newR':
+        i++;
+        j++;
+        break;
+      }
+      case 'newL':
+      {
+        const length = choice[1];
+        edits.push(['remove', n1s[i]]);
+        i += length;
+        break;
+      }
+      case 'newR':
+      {
+        const length = choice[1];
+        // new inserts, so right takes precedence: overwrite current subexp tag with right tag
+        if (currentExp[currentSubexpressionPos + 2] !== n2s[j][1])
         {
-          const length = choice[1];
-          edits.push(['add', n1s[i-1], n2s[j]]); // the -1 makes it an 'add n2s after n1s[i-1]'
-          j += length;
-          break;
+          if (stack.at(-1)[2] === 'match')
+          {
+            edits.push(['modify', currentExp[1], currentSubexpressionPos, n2s[j][1]]);        
+          }
+          else
+          {
+            currentExp[currentSubexpressionPos + 2] = n2s[j][1];
+          }
         }
-        default:
-          throw new Error(`cannot handle choice ${choice[0]}`);
+        // else
+        // {
+        //   edits.push(['add', n2s[j]]);
+        // }
+        stack.at(-1)[1]++;
+        if (currentSubexpressionPos + 1 === currentExp.length - 2)
+        {
+          if (stack.at(-1)[2] === 'newR')
+          {
+            edits.push(['add', currentExp]);        
+          }
+          stack.pop();
+        }
+        if (n2s[j][0] !== '$lit' && n2s[j][0] !== '$id')
+        {
+          stack.push([n2s[j].slice(0), 0, 'newR']);
+        }
+        else
+        {
+          edits.push(['add', n2s[j]]);
+        }
+        j += length;
+        break;
+      }
+      default:
+        throw new Error(`cannot handle choice ${choice[0]}`);
     }
   }
-  return edits;
+  console.log(`\nedits:\n${edits.join('\n')}`);
+
+////////////////////////////////
+  // turn modify into add/remove 
+
+  const modifs = [];
+  const edits2 = [];
+  for (const edit of edits)
+  {
+    if (edit[0] === 'modify')
+    {
+      const [_, tag, pos, newTag] = edit;
+      if (modifs[tag] === undefined)
+      {
+        modifs[tag] = n1map[tag].slice(0);
+      }
+      modifs[tag][pos + 2] = newTag;
+    }
+    else
+    {
+      edits2.push(edit);
+    }
+  }
+  for (const modif of modifs)
+  {
+    if (modif)
+    {
+      edits2.push(['replace', n1map[modif[1]], modif]);
+    }
+  }
+
+  console.log(`\nedits2:\n${edits2.join('\n')}`);
+
+  console.log(`total time ${performance.now() - start}`);
+  return edits2;
 }
 
-
-export { diff, ast2tuples }
+// function modify2addremove(n1s, edits)
+// {
+// }
 
 // const parser = new SchemeParser();
 // // const p1 = parser.parse(`(let ((f (lambda (x y) (+ x y)))) (f 1 2))`);
 // // const p2 = parser.parse(`(let ((f (lambda (x z y) (+ x y)))) (f 1 99 2))`);
 
-// // interesting case: match,2 modify newR,2 match,1 newR,1 (captures intent?) vs. match,2 newR,4 match,1 newL,1
-// // const p1 = parser.parse(`(let ((x 1)) x)`);
-// // const p2 = parser.parse(`(let ((x 2)) (+ x 1))`);
+// interesting case: match,2 modify newR,2 match,1 newR,1 (captures intent?) vs. match,2 newR,4 match,1 newL,1
+// const p1 = parser.parse(`(let ((x 1)) x)`);
+// const p2 = parser.parse(`(let ((x 2)) (+ x 1))`);
 
 // const p1 = parser.parse(`(lambda (x) (+ 1 2))`);
 // const p2 = parser.parse(`(lambda (x y) z)`);
