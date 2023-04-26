@@ -402,31 +402,34 @@ function diff(n1s, n2s)
       case 'newR':
       {
         const length = choice[1];
-        // new inserts, so right takes precedence: overwrite current subexp tag with right tag
-        if (currentExp[currentSubexpressionPos + 2] !== n2s[j][1])
+        if (currentExp)
         {
-          if (stack.at(-1)[2] === 'match')
+          // new inserts, so right takes precedence: overwrite current subexp tag with right tag
+          if (currentExp[currentSubexpressionPos + 2] !== n2s[j][1])
           {
-            edits.push(['modify', currentExp[1], currentSubexpressionPos, n2s[j][1]]);        
+            if (stack.at(-1)[2] === 'match')
+            {
+              edits.push(['modify', currentExp[1], currentSubexpressionPos, n2s[j][1]]);        
+            }
+            else
+            {
+              currentExp[currentSubexpressionPos + 2] = n2s[j][1];
+            }
           }
-          else
+          stack.at(-1)[1]++;
+          if (currentSubexpressionPos + 1 === currentExp.length - 2)
           {
-            currentExp[currentSubexpressionPos + 2] = n2s[j][1];
+            if (stack.at(-1)[2] === 'newR')
+            {
+              edits.push(['add', currentExp]);        
+            }
+            stack.pop();
           }
         }
-        // else
+        // else // no stack
         // {
         //   edits.push(['add', n2s[j]]);
         // }
-        stack.at(-1)[1]++;
-        if (currentSubexpressionPos + 1 === currentExp.length - 2)
-        {
-          if (stack.at(-1)[2] === 'newR')
-          {
-            edits.push(['add', currentExp]);        
-          }
-          stack.pop();
-        }
         if (n2s[j][0] !== '$lit' && n2s[j][0] !== '$id')
         {
           stack.push([n2s[j].slice(0), 0, 'newR']);

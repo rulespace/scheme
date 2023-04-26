@@ -127,14 +127,23 @@ function test(src1, src2)
   doDiff(src2, src1);
 }
 
-// test(`1`, `2`);
-// test(`(let ((x 1)) x)`, `(let ((x 2)) x)`);
-// test(`(let ((x 1)) x)`, `(let ((y 1)) y)`);
-// test(`(let ((x 1)) x)`, `(let ((x (+ y z))) x)`);
-// test(`(let ((x 1)) x)`, `(let ((x (+ 1 z))) x)`);
-// test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
+test(`1`, `2`);
+test(`x`, `y`);
+test(`1`, `x`);
+test(`1`, `(+ x y)`);
+test(`1`, `(+ 1 x)`);
+test(`(let ((x 1)) x)`, `(let ((x 2)) x)`);
+test(`(let ((x 1)) x)`, `(let ((y 1)) y)`);
+test(`(let ((x 1)) x)`, `(let ((x (+ y z))) x)`);
+test(`(let ((x 1)) x)`, `(let ((x (+ 1 z))) x)`);
+test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
+test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
 
-// test(`(foo f g h)`, `(bar f g h)`);
+test(`(foo f g h)`, `(bar f g h)`);
+test(`(foo f g h)`, `(foo x g h)`);
+test(`(foo f g h)`, `(bar x y z)`);
+
+// test(`(foo f)`, `(foo f g)`);
 
 // **
 
