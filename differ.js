@@ -187,13 +187,8 @@ function diffAst(p1, p2)
   return diff(n1s, n2s);
 }
 
-function diff(n1s, n2s)
+function step1(n1s, n1map, n2s, n2map)
 {
-  const start = performance.now();
-
-  const n1map = nodeMap(n1s);
-  const n2map = nodeMap(n2s);
-
   const initial = [[], 0, 0, 0];  // choices i j cost
   const leafs = [];
   const todo = [initial];
@@ -318,133 +313,220 @@ function diff(n1s, n2s)
   }
 
   leafs.sort((a, b) => a[1] - b[1]); // TODO: dynamically track shortest instead of post-sort
-  const duration = performance.now() - start;
-
   // console.log(leafs.map(e => [e, cost(e)]).slice(0, 100).join('\n'));
-  console.log(`solutions ${leafs.length} duration ${duration}`);
 
+  console.log(`solutions ${leafs.length}`);  
   const [topChoices, cost] = leafs[0];
-  console.log(`top choices (cost ${cost}):\n${topChoices.join('\n')}`);
+  console.log(`top choices (cost ${cost}):\n${topChoices.join('\n')}`);  
+  return topChoices;
+}
+
+function diff(n1s, n2s)
+{
+  const start = performance.now();
   
-////////////////////////////////
+  const n1map = nodeMap(n1s);
+  const n2map = nodeMap(n2s);
 
+  const topChoices = step1(n1s, n1map, n2s, n2map);
+  console.log(`duration step 1 ${performance.now() - start}`);
 
+  let c = 0;
   let i = 0;
   let j = 0;
 
-  const stack = [];
   const edits = [];
-  for (const choice of topChoices)
+
+  function consumeChoice()
   {
-    console.log(`${i} ${n1s[i]} ${choice[0]} ${j} ${n2s[j]}`);
-    // console.log(`stack ${stack.join(' ')}`);
+    return topChoices[c++];
+  }
 
-    const currentExp = stack.length === 0 ? null : stack.at(-1)[0];
-    const currentSubexpressionPos = currentExp === null ? -1 : stack.at(-1)[1];
-    const currentSubexpression = currentExp === null ? null : currentExp[currentSubexpressionPos + 2]; // skip type and tag
+  function modify(tag, pos, val)
+  {
+    const edit = ['modify', tag, pos, val]
+    console.log(`\t\t${edit}`);
+    edits.push(edit);
+  }
 
-    switch (choice[0])
+  function add(el)
+  {
+    const edit = ['add', el] 
+    console.log(`\t\t${edit}`);
+    edits.push(edit);
+  }
+
+  function remove(el)
+  {
+    const edit = ['remove', el] 
+    console.log(`\t\t${edit}`);
+    edits.push(edit);
+  }
+
+  function matchFixed(current, right)
+  {
+    for (let s = 0; s < current.length - 2; s++)
     {
-
-      case 'match':
+      const choice = consumeChoice();
+      console.log(`${i} ${n1s[i]} ${choice[0]} ${j} ${n2s[j]}`);
+      console.log(`\tmatchFixed ${current} ${s} ${right}`)
+      switch (choice[0])
       {
-        if (stack.length > 0)
+        case 'match':
         {
-          // match, so left takes precedence: overwrite current subexp tag with left tag (they may already match)
-          if (currentSubexpression !== n1s[i][1])
+          if (current[s+2] !== n1s[i][1])
           {
-            if (stack.at(-1)[2] === 'match')
-            {
-              edits.push(['modify', currentExp[1], currentSubexpressionPos, n1s[i][1]]);        
-            }
-            else
-            {
-              currentExp[currentSubexpressionPos + 2] = n1s[i][1];
-            }  
-          }
-          stack.at(-1)[1]++;
-          if (currentSubexpressionPos + 1 === currentExp.length - 2)
-          {
-            if (stack.at(-1)[2] === 'newR')
-            {
-              edits.push(['add', currentExp]);        
-            }
-            stack.pop();
-          }
+            modify(current[1], s, n1s[i][1]); // modify tag
+          }          
+          matchPush();
+          break;
         }
-        
-        if (n1s[i][0] !== '$lit' && n1s[i][0] !== '$id')
+        case 'modify':
         {
-          stack.push([n1s[i].slice(0), 0, 'match']);
+          if (current[s+2] !== n1s[i][1])
+          {
+            modify(current[1], s, n1s[i][1]); // modify tag
+          }          
+          modify(n1s[i++][1], 0, n2s[j++][2]);  // modify val
+          break;
         }
-        i += choice[1];
-        j += choice[1];
-        break;
+        case 'newL':
+        {
+          remove(n1s[i++]);
+          s--;
+          break;
+        }
+        case 'newR':
+        {
+          modify(current[1], s, n2s[j][1]); //
+          newRPush();
+          break;
+        }
+        default: throw new Error();
       }
-      case 'modify':
+    }
+  }
+
+  function newRFixed(current, left)
+  {
+    for (let s = 0; s < current.length - 2; s++)
+    {
+      const choice = consumeChoice();
+      console.log(`${i} ${n1s[i]} ${choice[0]} ${j} ${n2s[j]}`);
+      console.log(`\tnewRFixed ${current} ${s} ${left}`)
+      switch (choice[0])
       {
-        edits.push(['modify', n1s[i][1], 0, n2s[j][2]]);
-        if (stack.length > 0)
+        case 'match':
         {
-          stack.at(-1)[1]++;
+          current[s+2] = n1s[i][1];
+          matchPush();
+          break;
         }
+        case 'modify':
+        {
+          current[s+2] = n1s[i][1];
+          modify(n1s[i++][1], 0, n2s[j++][2]); // modify val
+          break;
+        }
+        case 'newL':
+        {
+          remove(n1s[i++]);
+          break;
+        }
+        case 'newR':
+        {
+          newRPush();
+          break;
+        }
+        default: throw new Error();
+     }
+    }
+    add(current);        
+  }
+
+  function matchPush()
+  {
+    switch (n1s[i][0])
+    {
+      case '$lit':
+      case '$id':
+      {
         i++;
         j++;
         break;
       }
-      case 'newL':
+      case '$let':
+      case '$if':
       {
-        const length = choice[1];
-        edits.push(['remove', n1s[i]]);
-        i += length;
+        matchFixed(n1s[i++].slice(0), n2s[j++]);
         break;
       }
-      case 'newR':
+      case '$app':
       {
-        const length = choice[1];
-        if (currentExp)
+        if (n1s[i].length === n2s[j].length)
         {
-          // new inserts, so right takes precedence: overwrite current subexp tag with right tag
-          if (currentExp[currentSubexpressionPos + 2] !== n2s[j][1])
-          {
-            if (stack.at(-1)[2] === 'match')
-            {
-              edits.push(['modify', currentExp[1], currentSubexpressionPos, n2s[j][1]]);        
-            }
-            else
-            {
-              currentExp[currentSubexpressionPos + 2] = n2s[j][1];
-            }
-          }
-          stack.at(-1)[1]++;
-          if (currentSubexpressionPos + 1 === currentExp.length - 2)
-          {
-            if (stack.at(-1)[2] === 'newR')
-            {
-              edits.push(['add', currentExp]);        
-            }
-            stack.pop();
-          }
-        }
-        // else // no stack
-        // {
-        //   edits.push(['add', n2s[j]]);
-        // }
-        if (n2s[j][0] !== '$lit' && n2s[j][0] !== '$id')
-        {
-          stack.push([n2s[j].slice(0), 0, 'newR']);
+          matchFixed(n1s[i++].slice(0), n2s[j++]);
         }
         else
         {
-          edits.push(['add', n2s[j]]);
+          matchApp(n1s[i++].slice(0), n2s[j++]);
         }
-        j += length;
         break;
       }
       default:
-        throw new Error(`cannot handle choice ${choice[0]}`);
+        throw new Error(`cannot handle match ${n1s[i][0]}`);
     }
   }
+
+  function newRPush()
+  {
+    switch (n2s[j][0])
+    {
+      case '$lit':
+      case '$id':
+      {
+        add(n2s[j++]);
+        break;
+      }
+      case '$let':
+      case '$if':
+      case '$app':
+      {
+        newRFixed(n2s[j++].slice(0), n1s[i]);
+        break;
+      }
+      default:
+        throw new Error(`cannot handle newR ${n2s[j][0]}`);
+    }
+  }
+
+  while (c < topChoices.length)
+  {
+    const choice = consumeChoice();
+    console.log(`${i} ${n1s[i]} ${choice[0]} ${j} ${n2s[j]}`);
+
+    if (choice[0] === 'match')
+    {
+      matchPush();
+    }
+    else if (choice[0] === 'modify')
+    {
+      modify(n1s[i++][1], 0, n2s[j++][2]);
+    }
+    else if (choice[0] === 'newL')
+    {
+      remove(n1s[i++]);
+    }
+    else if (choice[0] === 'newR')
+    {
+      newRPush();
+    }
+    else
+    {
+      throw new Error(`cannot handle ${choice[0]} with empty stack`);
+    }
+  }
+
   console.log(`\nedits:\n${edits.join('\n')}`);
 
 ////////////////////////////////

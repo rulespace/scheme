@@ -75,7 +75,7 @@ function tuplesToString(tuples)
         }
       case '$app':
         {
-          return `(${stringify(m[t[2]])} ${t.slice(3).map(x => stringify(m[x])).join(' ')}`;
+          return `(${stringify(m[t[2]])} ${t.slice(3).map(x => stringify(m[x])).join(' ')})`;
         }
       default: throw new Error(`cannot handle ${t}`);
     }
@@ -136,9 +136,9 @@ test(`(let ((x 1)) x)`, `(let ((x 2)) x)`);
 test(`(let ((x 1)) x)`, `(let ((y 1)) y)`);
 test(`(let ((x 1)) x)`, `(let ((x (+ y z))) x)`);
 test(`(let ((x 1)) x)`, `(let ((x (+ 1 z))) x)`);
+test(`(let ((x 1)) x)`, `(let ((x (+ 2 z))) x)`);
 test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
 test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
-
 test(`(foo f g h)`, `(bar f g h)`);
 test(`(foo f g h)`, `(foo x g h)`);
 test(`(foo f g h)`, `(bar x y z)`);
