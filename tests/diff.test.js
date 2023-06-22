@@ -62,16 +62,22 @@ function tuplesToString(tuples)
     switch (t[0])
     {
       case '$lit':
-        {
-          return t[2];
-        }
       case '$id':
+      case '$param':
         {
           return t[2];
         }
       case '$let':
         {
           return `(let ((${stringify(m[t[2]])} ${stringify(m[t[3]])})) ${stringify(m[t[4]])})`;
+        }
+      case '$if':
+        {
+          return `(if ${stringify(m[t[2]])} ${stringify(m[t[3]])} ${stringify(m[t[4]])})`;
+        }
+      case '$lam':
+        {
+          return `(lambda (${t.slice(2, -1).map(x => stringify(m[x])).join(' ')}) ${stringify(m[t.at(-1)])})`;
         }
       case '$app':
         {
@@ -127,28 +133,55 @@ function test(src1, src2)
   doDiff(src2, src1);
 }
 
-test(`1`, `2`);
-test(`x`, `y`);
-test(`1`, `x`);
-test(`1`, `(+ x y)`);
-test(`1`, `(+ 1 x)`);
-test(`(let ((x 1)) x)`, `(let ((x 2)) x)`);
-test(`(let ((x 1)) x)`, `(let ((y 1)) y)`);
-test(`(let ((x 1)) x)`, `(let ((x (+ y z))) x)`);
-test(`(let ((x 1)) x)`, `(let ((x (+ 1 z))) x)`);
-test(`(let ((x 1)) x)`, `(let ((x (+ 2 z))) x)`);
-test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
-test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
-test(`(foo f g h)`, `(bar f g h)`);
-test(`(foo f g h)`, `(foo x g h)`);
-test(`(foo f g h)`, `(bar x y z)`);
+// test(`1`, `2`);
+// test(`x`, `y`);
+// test(`1`, `x`);
+// test(`1`, `(+ x y)`);
+// test(`1`, `(+ 1 x)`);
+// test(`(let ((x 1)) x)`, `(let ((x 2)) x)`);
+// test(`(let ((x 1)) x)`, `(let ((y 1)) y)`);
+// test(`(let ((x 1)) x)`, `(let ((x (+ y z))) x)`);
+// test(`(let ((x 1)) x)`, `(let ((x (+ 1 z))) x)`);
+// test(`(let ((x 1)) x)`, `(let ((x (+ 2 z))) x)`);
+// test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
+// test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
 
+// test(`(if a b c)`, `(if x b c)`)
+// test(`(if a b c)`, `(if a x y)`)
+// test(`(if a b c)`, `(if a c b)`)
+// test(`(if a b c)`, `(if a (+ x y) (+ r s))`);
+
+// test(`(foo f g h)`, `(bar f g h)`);
+// test(`(foo f g h)`, `(foo x g h)`);
+// test(`(foo f g h)`, `(bar x y z)`);
+// test(`(foo f g h)`, `(foo 1 g h)`);
+// test(`(foo f g h)`, `(foo 1 2 3)`);
+
+// test(`(foo)`, `(foo f)`);
 // test(`(foo f)`, `(foo f g)`);
+// test(`(foo f)`, `(foo f g h)`);
+// test(`(foo f)`, `(foo x f y)`);
+// test(`(foo f)`, `(foo 1 f 2)`);
+// test(`(foo f)`, `(foo 1 2 3)`);
+// test(`(foo a b c)`, `(foo 1 a b 2)`);
+
+// test(`(lambda (f g h) foo)`, `(lambda (f g h) bar)`);
+// test(`(lambda (f g h) foo)`, `(lambda (f g h) (+ x y))`);
+// test(`(lambda (f g h) foo)`, `(lambda (x g h) foo)`);
+// test(`(lambda (f g h) foo)`, `(lambda (x y z) bar)`);
+// test(`(lambda () foo)`, `(lambda (f) foo)`);
+// test(`(lambda (f) foo)`, `(lambda (f g) foo)`);
+// test(`(lambda (f) foo)`, `(lambda (f g h) foo)`);
+// test(`(lambda (f) foo)`, `(lambda (x f y) foo)`);
+
+// test(`(lambda () f)`, `(lambda (f) f)`); // !! want MRM and not MMR: dedicated $param (iso. $id) 
+// test(`(lambda () (lambda () f))`, `(lambda () (lambda (f) f))`);
+// test(`(lambda (a b) f)`, `(lambda (a b f) f)`);
+// test(`(lambda (x y) x)`, `(lambda (x y) (+ x y))`);
+test(`(lambda (x y) x)`, `(lambda (x) (+ x y))`); // interesting 'quick' example MMLRRMR, but currently getting MMLRRMR
 
 // **
-
-// test(`(lambda (x y) (+ x y))`, `(lambda (x y) x)`);
-// test(`(lambda (x y) (+ x y))`, `(lambda (x) x)`);
+// 
 // test(`(let ((x #t))
 //         (if x
 //             'neg

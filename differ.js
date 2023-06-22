@@ -31,10 +31,10 @@ function ast2tuples(ast)
         case "lambda":
         {
           const params = ast.cdr.car;
-          const paramTuples = [...params].map(ast2tuples);
+          const paramTuples = [...params].map(sym => ['$param', sym.tag, sym.toString()]);
           const body = ast.cdr.cdr.car; // only one body exp allowed (here, and elsewhere)
           const bodyTuples = ast2tuples(body);
-          return [['$lam', ast.tag, ...[...params].map(t => t.tag), body.tag], ...paramTuples.flat(), ...bodyTuples];
+          return [['$lam', ast.tag, ...[...params].map(t => t.tag), body.tag], ...paramTuples, ...bodyTuples];
         }
         case "let":
         {
@@ -136,7 +136,7 @@ function ast2tuples(ast)
 
 function subtreeMatches(t1, n1map, t2, n2map)
 {
-  if (((t1[0] === '$id' || t1[0] === '$lit')) && t1[0] === t2[0])
+  if (((t1[0] === '$id' || t1[0] === '$lit' || t1[0] === '$param')) && t1[0] === t2[0])
   {
     if (t1[2] === t2[2])
     {
@@ -224,6 +224,8 @@ function step1(n1s, n1map, n2s, n2map)
       continue;
     }
 
+    // make trailing R and L bit more expensive (same-cost solution that ends with Ms is better)?
+
     if (i === n1s.length)
     {
       todo.push([choices.concat([['newR', 1]]), i, j+1, cost + 100]);
@@ -256,7 +258,7 @@ function step1(n1s, n1map, n2s, n2map)
       }
       //      
     }
-    else
+    // else   // SHOULD THIS ELSE BE HERE OR NOT?  e.g. (f *a b) -> (f *a a b) should not be M by default (can also be R)
     { 
       // const prevChoice = choices.at(-1);
 
@@ -313,7 +315,7 @@ function step1(n1s, n1map, n2s, n2map)
   }
 
   leafs.sort((a, b) => a[1] - b[1]); // TODO: dynamically track shortest instead of post-sort
-  // console.log(leafs.map(e => [e, cost(e)]).slice(0, 100).join('\n'));
+  // console.log(leafs.slice(0, 100).join('\n'));
 
   console.log(`solutions ${leafs.length}`);  
   const [topChoices, cost] = leafs[0];
@@ -363,13 +365,21 @@ function diff(n1s, n2s)
     edits.push(edit);
   }
 
-  function matchFixed(current, right)
+  function genericEdit(edit)
   {
-    for (let s = 0; s < current.length - 2; s++)
+    console.log(`\t\t${edit}`);
+    edits.push(edit);
+  }
+
+  function matchNonSimple(current, s)
+  {
+    const ss = s + 1;
+
+    while (s < ss)
     {
       const choice = consumeChoice();
       console.log(`${i} ${n1s[i]} ${choice[0]} ${j} ${n2s[j]}`);
-      console.log(`\tmatchFixed ${current} ${s} ${right}`)
+      console.log(`\tmatchNonSimple ${current} ${s}`);
       switch (choice[0])
       {
         case 'match':
@@ -377,8 +387,9 @@ function diff(n1s, n2s)
           if (current[s+2] !== n1s[i][1])
           {
             modify(current[1], s, n1s[i][1]); // modify tag
-          }          
+          }
           matchPush();
+          s++;
           break;
         }
         case 'modify':
@@ -388,23 +399,157 @@ function diff(n1s, n2s)
             modify(current[1], s, n1s[i][1]); // modify tag
           }          
           modify(n1s[i++][1], 0, n2s[j++][2]);  // modify val
+          s++;
           break;
         }
         case 'newL':
         {
+          // genericEdit(['removeNonSimple', current[1], s]);
           remove(n1s[i++]);
-          s--;
           break;
         }
         case 'newR':
         {
           modify(current[1], s, n2s[j][1]); //
           newRPush();
+          s++;
           break;
         }
         default: throw new Error();
       }
     }
+  }
+
+  function matchSimple(current, s)
+  {
+    const choice = consumeChoice();
+    switch (choice[0])
+    {
+      case 'match':
+      {
+        if (current[s+2] !== n1s[i][1])
+        {
+          modify(current[1], s, n1s[i][1]); // modify tag
+        }
+        i++;
+        j++;
+        break;
+      }
+      case 'modify':
+      {
+        if (current[s+2] !== n1s[i][1])
+        {
+          modify(current[1], s, n1s[i][1]); // modify tag
+        }          
+        modify(n1s[i++][1], 0, n2s[j++][2]);  // modify val
+        break;
+      }
+      case 'newL':
+      {
+        remove(n1s[i++]);
+        break;
+      }
+      case 'newR':
+      {
+        modify(current[1], s, n2s[j][1]); 
+        add(n2s[j++]);
+        break;
+      }
+      default: throw new Error();
+    }
+  }
+
+  function matchSimpleList(current, s, numLeft, numRight)
+  {
+    const ii = i + numLeft; // we can do this, since all subexps are simple
+    const jj = j + numRight;
+    let ss = s; // virtual cursor (s is regular cursor in current)
+
+    while (i < ii  || j < jj)
+    {
+      const choice = consumeChoice();
+      console.log(`${i} ${n1s[i]} ${choice[0]} ${j} ${n2s[j]}`);
+      console.log(`\tmatchSimpleList ${current} ${s}`);
+
+      switch (choice[0])
+      {
+        case 'match': // this fails when left is at end (i === ii) and right is not (should become insert)
+        // but: can this happen? (with dedicated $param element match can only happen between params, not param and id in body)
+        {
+          i++;
+          j++;
+          s++;
+          ss++;
+          break;
+        }
+        case 'modify':
+        {
+          modify(n1s[i][1], 0, n2s[j][2]);  // modify val
+          i++;
+          j++;
+          s++;
+          ss++;
+          break;
+        }
+        case 'newL':
+        {
+          genericEdit(['removeSimple', current[1], ss]);
+          remove(n1s[i]);
+          i++;
+          s++;
+          break;
+        }
+        case 'newR':
+        {
+          genericEdit(['insertSimple', current[1], ss, n2s[j][1]]);
+          add(n2s[j]);
+          j++;
+          ss++;
+          break;
+        }
+        default: throw new Error();
+      }
+    }
+  }
+
+  function matchLet(current, right)
+  {
+    matchSimple(current, 0);
+    matchNonSimple(current, 1);
+    matchNonSimple(current, 2);
+  }
+
+  function matchIf(current, right)
+  {
+    matchSimple(current, 0);
+    matchNonSimple(current, 1);
+    matchNonSimple(current, 2);
+  }
+
+  function matchLam(current, right)
+  {
+    // params
+    const paramsLeft = current.length - 3; // -type, -tag, -body 
+    const paramsRight = right.length - 3; 
+    const startPosition = 0;
+    
+    matchSimpleList(current, startPosition, paramsLeft, paramsRight);
+
+    // body
+    matchNonSimple(current, paramsLeft);
+  }
+
+  function matchApp(current, right)
+  {
+    // operator
+    matchSimple(current, 0);
+
+    // operands
+    const operandsLeft = current.length - 3; // -type, -tag, -rator 
+    const operandsRight = right.length - 3; 
+    const startPosition = 1;
+
+    matchSimpleList(current, startPosition, operandsLeft, operandsRight);
   }
 
   function newRFixed(current, left)
@@ -456,21 +601,23 @@ function diff(n1s, n2s)
         break;
       }
       case '$let':
+      {
+        matchLet(n1s[i++].slice(0), n2s[j++]);
+        break;
+      }
       case '$if':
       {
-        matchFixed(n1s[i++].slice(0), n2s[j++]);
+        matchIf(n1s[i++].slice(0), n2s[j++]);
+        break;
+      }
+      case '$lam':
+      {
+        matchLam(n1s[i++].slice(0), n2s[j++]);
         break;
       }
       case '$app':
       {
-        if (n1s[i].length === n2s[j].length)
-        {
-          matchFixed(n1s[i++].slice(0), n2s[j++]);
-        }
-        else
-        {
-          matchApp(n1s[i++].slice(0), n2s[j++]);
-        }
+        matchApp(n1s[i++].slice(0), n2s[j++]);
         break;
       }
       default:
@@ -490,6 +637,7 @@ function diff(n1s, n2s)
       }
       case '$let':
       case '$if':
+      case '$lam':
       case '$app':
       {
         newRFixed(n2s[j++].slice(0), n1s[i]);
@@ -530,7 +678,7 @@ function diff(n1s, n2s)
   console.log(`\nedits:\n${edits.join('\n')}`);
 
 ////////////////////////////////
-  // turn modify into add/remove 
+  // turn modify etc. into add/remove 
 
   const modifs = [];
   const edits2 = [];
@@ -545,6 +693,24 @@ function diff(n1s, n2s)
       }
       modifs[tag][pos + 2] = newTag;
     }
+    else if (edit[0] === 'insertSimple')
+    {
+      const [_, tag, pos, newTag] = edit;
+      if (modifs[tag] === undefined)
+      {
+        modifs[tag] = n1map[tag].slice(0);
+      }
+      modifs[tag].splice(pos + 2, 0, newTag);
+    }
+    else if (edit[0] === 'removeSimple' || edit[0] === 'removeNonSimple')
+    {
+      const [_, tag, pos] = edit;
+      if (modifs[tag] === undefined)
+      {
+        modifs[tag] = n1map[tag].slice(0);
+      }
+      modifs[tag].splice([pos + 2], 1);
+    }
     else
     {
       edits2.push(edit);
@@ -554,7 +720,7 @@ function diff(n1s, n2s)
   {
     if (modif)
     {
-      edits2.push(['replace', n1map[modif[1]], modif]);
+      edits2.push(['replace', n1map[modif[1]], modif]); 
     }
   }
 
