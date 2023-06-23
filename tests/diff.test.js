@@ -133,11 +133,21 @@ function test(src1, src2)
   doDiff(src2, src1);
 }
 
+const start = performance.now();
+
 test(`1`, `1`);
 test(`1`, `2`);
 test(`x`, `x`);
 test(`x`, `y`);
 test(`1`, `x`);
+test(`'a`, `'a`);
+test(`'a`, `'b`);
+test(`'a`, `a`);
+test(`"a"`,`"a"`);
+test(`"a"`,`"b"`);
+test(`"a"`,`'a`);
+test(`"a"`,`a`);
+test(`"a"`,`1`);
 
 test(`1`, `(+ x y)`);
 test(`1`, `(+ 1 x)`);
@@ -149,17 +159,25 @@ test(`(let ((x 1)) x)`, `(let ((x (+ 1 z))) x)`);
 test(`(let ((x 1)) x)`, `(let ((x (+ 2 z))) x)`);
 test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
 test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
+test(`(let ((x 1)) x)`, `(let ((x 2)) (+ x 1))`);
 
 test(`(if a b c)`, `(if x b c)`)
 test(`(if a b c)`, `(if a x y)`)
 test(`(if a b c)`, `(if a c b)`)
 test(`(if a b c)`, `(if a (+ x y) (+ r s))`);
 
-test(`(foo f g h)`, `(bar f g h)`);
+test(`(foo f g h)`, `(bar f g h)`); // ==
 test(`(foo f g h)`, `(foo x g h)`);
 test(`(foo f g h)`, `(bar x y z)`);
 test(`(foo f g h)`, `(foo 1 g h)`);
 test(`(foo f g h)`, `(foo 1 2 3)`);
+test(`(list a b c d e f g h i j k l m n o p q r s t u v w x y z)`, `(list a b c d e f g h i j k l m n p q r s t u v w x y z)`);
+test(`(list a a a a a a a a a a a a a a a a a a)`, `(list a a a a a a a a a a a a a a a a a a)`); // ==
+test(`(list a a a a a a a a a a a a a a a a a a)`, `(list a a a a a a a a a a b a a a a a a a a)`);
+test(`(list a a a a a a a a a a a a a a a a a a)`, `(list a a a a a a a a a a b a a a a a a a)`);
+test(`(let ((x (list a a a a a a a a a a a a a a a a a a))) b)`, `(let ((x (list a a a a a a a a a a a a a a a a a a))) b)`); // ==
+test(`(let ((x (list a a a a a a a a a a a a a a a a a a))) b)`, `(let ((x (list a a a a a a a a a a a a a a a a a a))) c)`);
+
 
 test(`(foo)`, `(foo f)`);
 test(`(foo f)`, `(foo f g)`);
@@ -183,34 +201,30 @@ test(`(lambda () (lambda () f))`, `(lambda () (lambda (f) f))`);
 test(`(lambda (a b) f)`, `(lambda (a b f) f)`);
 test(`(lambda (x y) x)`, `(lambda (x y) (+ x y))`);
 test(`(lambda (x y) x)`, `(lambda (x) (+ x y))`); // interesting 'quick' example MMLRRMR, but currently getting MMRRLMR
+test(`(let ((f (lambda (x) x))) f)`, `(let ((f (lambda (x) (+ x x)))) f)`);
+// console.log(`${performance.now() - start} ms`)// ±80ms
 
-// **
-// 
-// test(`(let ((x #t))
-//         (if x
-//             'neg
-//             'zeropos))`,  
-//      `(let ((x #t))
-//         (if x
-//             'neg
-//             'zeropos))`);                           
 
-// test(`(let ((x 1)) x)`, `(let ((x 2)) (+ x 1))`);
+test(`(let ((x #t))
+        (if x
+            'neg
+            'zeropos))`,  
+     `(let ((x #t))
+        (if x
+            'zeropos
+            'neg))`);                           
 
-// test(`(let ((find-extension
-//         (lambda (url)
-//           (let ((_ "Return the extension of the archive e.g. '.tar.gz' given a URL, or false if none is recognized"))
-//             (let ((l (list ".tar.gz" ".tar.bz2" ".tar.xz" ".zip" ".tar" ".tgz" ".tbz" ".love")))
-//               (find (lambda (x) (string-suffix? x url))
-//                     l)))))) find-extension)`,
-//      `(let ((find-extension
-//         (lambda (url)
-//           (let ((_ "Return the extension of the archive e.g. '.tar.gz' given a URL, or false if none is recognized"))
-//             (let ((l (list ".orig.tar.gz" ".tar.gz" ".tar.bz2" ".tar.xz" ".zip" ".tar" ".tgz" ".tbz" ".love")))
-//               (find (lambda (x) (string-suffix? x url))
-//                     l)))))) find-extension)`);
-
-        
-                              
+test(`(let ((find-extension
+        (lambda (url)
+          (let ((_ "Return the extension of the archive e.g. '.tar.gz' given a URL, or false if none is recognized"))
+            (let ((l (list ".tar.gz" ".tar.bz2" ".tar.xz" ".zip" ".tar" ".tgz" ".tbz" ".love")))
+              (find (lambda (x) (string-suffix? x url))
+                    l)))))) find-extension)`,
+     `(let ((find-extension
+        (lambda (url)
+          (let ((_ "Return the extension of the archive e.g. '.tar.gz' given a URL, or false if none is recognized"))
+            (let ((l (list ".orig.tar.gz" ".tar.gz" ".tar.bz2" ".tar.xz" ".zip" ".tar" ".tgz" ".tbz" ".love")))
+              (find (lambda (x) (string-suffix? x url))
+                    l)))))) find-extension)`);
 
 

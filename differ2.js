@@ -3,6 +3,8 @@ import { Null, Pair, SchemeParser, Sym } from './sexp-reader.js';
 
 export { diff, diffAst, ast2tuples, nodeMap }
 
+// TODO: quote is handled as an application
+
 function ast2tuples(ast)
 {
   if (ast instanceof String)
@@ -271,60 +273,60 @@ function step1(n1s, n1map, n2s, n2map)
         todo.push([choices.concat([['newR', 1]]), i, j+1, cost + 100]);
         continue;
       }
-    }
 
-    // else   // SHOULD THIS ELSE BE HERE OR NOT?  e.g. (f *a b) -> (f *a a b) should not be M by default (can also be R)
-    { 
-      // const prevChoice = choices.at(-1);
+      // SHOULD THIS BE EXCLUSIVE (in the 'else' part) WITH MATCH? e.g. (f *a b) -> (f *a a b) should not be M by default (can also be R)
+      { 
+        // const prevChoice = choices.at(-1);
 
-      // if (prevChoice !== undefined && prevChoice[0] === 'newL')
-      // {
-      //   const newChoices = choices.slice(0, -1);
-      //   newChoices.push(['newL', prevChoice[1] + 1]);
-      //   todo.push([newChoices, i + 1, j, cost + 100]);
-      // }
-      // else
+        // if (prevChoice !== undefined && prevChoice[0] === 'newL')
+        // {
+        //   const newChoices = choices.slice(0, -1);
+        //   newChoices.push(['newL', prevChoice[1] + 1]);
+        //   todo.push([newChoices, i + 1, j, cost + 100]);
+        // }
+        // else
 
-      {
-        todo.push([choices.concat([['newL', 1]]), i+1, j, cost + 100]);
-      }
-
-      // if (prevChoice !== undefined && prevChoice[0] === 'newR')
-      // {
-      //   const newChoices = choices.slice(0, -1);
-      //   newChoices.push(['newR', prevChoice[1] + 1]);
-      //   todo.push([newChoices, i, j + 1, cost + 100]);
-      // }
-      // else
-      {
-        todo.push([choices.concat([['newR', 1]]), i, j+1, cost + 100]);
-      }
-
-      if (left[0] === '$id' && left[0] === right[0] && left[2] !== right[2])
-      {
-        todo.push([choices.concat([['modify']]), i+1, j+1, cost + 1]);
-      }
-      else if (left[0] === '$lit' && left[0] === right[0] && left[2] !== right[2])
-      {
-        todo.push([choices.concat([['modify']]), i+1, j+1, cost + 1]);
-      }
-      else if (left[0] === right[0])
-      {
-        if (left[0] === '$let' || left[0] === '$if' || left[0] === '$lam' || left[0] === '$app')
         {
-          // pushMatch
-          // const prevChoice = choices.at(-1);
-          // if (prevChoice !== undefined && prevChoice[0] === 'match')
-          // {
-          //   const newChoices = choices.slice(0, -1);
-          //   newChoices.push(['match', prevChoice[1] + 1]);
-          //   todo.push([newChoices, i + 1, j + 1, cost]);
-          // }
-          // else
+          todo.push([choices.concat([['newL', 1]]), i+1, j, cost + 100]);
+        }
+
+        // if (prevChoice !== undefined && prevChoice[0] === 'newR')
+        // {
+        //   const newChoices = choices.slice(0, -1);
+        //   newChoices.push(['newR', prevChoice[1] + 1]);
+        //   todo.push([newChoices, i, j + 1, cost + 100]);
+        // }
+        // else
+        {
+          todo.push([choices.concat([['newR', 1]]), i, j+1, cost + 100]);
+        }
+
+        if (left[0] === '$id' && left[0] === right[0] && left[2] !== right[2])
+        {
+          todo.push([choices.concat([['modify']]), i+1, j+1, cost + 1]);
+        }
+        else if (left[0] === '$lit' && left[0] === right[0] && left[2] !== right[2])
+        {
+          todo.push([choices.concat([['modify']]), i+1, j+1, cost + 1]);
+        }
+        else if (left[0] === right[0])
+        {
+          if (left[0] === '$let' || left[0] === '$if' || left[0] === '$lam' || left[0] === '$app')
           {
-            todo.push([choices.concat([['match', 1]]), i+1, j+1, cost]);
+            // pushMatch
+            // const prevChoice = choices.at(-1);
+            // if (prevChoice !== undefined && prevChoice[0] === 'match')
+            // {
+            //   const newChoices = choices.slice(0, -1);
+            //   newChoices.push(['match', prevChoice[1] + 1]);
+            //   todo.push([newChoices, i + 1, j + 1, cost]);
+            // }
+            // else
+            {
+              todo.push([choices.concat([['match', 1]]), i+1, j+1, cost]);
+            }
+            //
           }
-          //
         }
       }
     }
@@ -404,7 +406,7 @@ function diff(n1s, n2s)
           {
             modify(current[1], s, n1s[i][1]); // modify tag
           }
-          matchPush();
+          matchPush(choice[1]);
           s++;
           break;
         }
@@ -580,7 +582,7 @@ function diff(n1s, n2s)
         case 'match':
         {
           current[s+2] = n1s[i][1];
-          matchPush();
+          matchPush(choice[1]);
           break;
         }
         case 'modify':
@@ -605,8 +607,15 @@ function diff(n1s, n2s)
     add(current);        
   }
 
-  function matchPush()
+  function matchPush(n)
   {
+    if (n > 1) 
+    {
+      // a complete subtree matched: skip (treat as atomic)
+      i += n;
+      j += n;
+      return;
+    }
     switch (n1s[i][0])
     {
       case '$lit':
@@ -671,7 +680,7 @@ function diff(n1s, n2s)
 
     if (choice[0] === 'match')
     {
-      matchPush();
+      matchPush(choice[1]);
     }
     else if (choice[0] === 'modify')
     {
