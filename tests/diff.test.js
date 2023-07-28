@@ -171,6 +171,7 @@ const start = performance.now();
 // test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
 // test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
 // test(`(let ((x 1)) x)`, `(let ((x 2)) (+ x 1))`);
+// test(`(let ((p (list a))) x)`, `(let ((p (list b a))) x)`);
 
 // test(`(if a b c)`, `(if x b c)`)
 // test(`(if a b c)`, `(if a x y)`)
@@ -231,7 +232,23 @@ const start = performance.now();
 // test(`y`, `(lambda (y) z)`);
 // test(`y`, `(lambda (z) y)`);
 
-// test(`(let ((f (lambda (x) x))) f)`, `(let ((f (lambda (x) (+ x x)))) f)`);
+test(`(let ((f (lambda (x) x))) f)`, `(let ((f (lambda (x) (+ x x)))) f)`);
+// test(`(f 1 (lambda (x) 2) 3)`, `(f 1 (lambda (x) 9) 3)`);
+  
+// test(
+// `(let ((find-extension
+//   (lambda (url)
+//     (let ((_ "R"))
+//       (let ((l (list ".tar.gz")))
+//         (find (lambda (x) (sf? x url))
+//               l)))))) x)`,
+// `(let ((find-extension
+//   (lambda (url)
+//     (let ((_ "R"))
+//       (let ((l (list ".orig.tar.gz" ".tar.gz")))
+//         (find (lambda (x) (sf? x url))
+//               l)))))) x)`);
+
 
 // // console.log(`${performance.now() - start} ms`)
 
@@ -245,18 +262,18 @@ const start = performance.now();
 //             'zeropos
 //             'neg))`);                           
 
-test(`(let ((find-extension
-        (lambda (url)
-          (let ((_ "Return the extension of the archive e.g. '.tar.gz' given a URL, or false if none is recognized"))
-            (let ((l (list ".tar.gz" ".tar.bz2" ".tar.xz" ".zip" ".tar" ".tgz" ".tbz" ".love")))
-              (find (lambda (x) (string-suffix? x url))
-                    l)))))) find-extension)`,
-     `(let ((find-extension
-        (lambda (url)
-          (let ((_ "Return the extension of the archive e.g. '.tar.gz' given a URL, or false if none is recognized"))
-            (let ((l (list ".orig.tar.gz" ".tar.gz" ".tar.bz2" ".tar.xz" ".zip" ".tar" ".tgz" ".tbz" ".love")))
-              (find (lambda (x) (string-suffix? x url))
-                    l)))))) find-extension)`); // shift SLOW pop fast
+// test(`(let ((find-extension
+//         (lambda (url)
+//           (let ((_ "Return the extension of the archive e.g. '.tar.gz' given a URL, or false if none is recognized"))
+//             (let ((l (list ".tar.gz" ".tar.bz2" ".tar.xz" ".zip" ".tar" ".tgz" ".tbz" ".love")))
+//               (find (lambda (x) (string-suffix? x url))
+//                     l)))))) find-extension)`,
+//      `(let ((find-extension
+//         (lambda (url)
+//           (let ((_ "Return the extension of the archive e.g. '.tar.gz' given a URL, or false if none is recognized"))
+//             (let ((l (list ".orig.tar.gz" ".tar.gz" ".tar.bz2" ".tar.xz" ".zip" ".tar" ".tgz" ".tbz" ".love")))
+//               (find (lambda (x) (string-suffix? x url))
+//                     l)))))) find-extension)`); // shift SLOW pop fast
 
 
 // test(`(if x

@@ -497,7 +497,7 @@ function diff(n1s, n2s)
       i++;
       j++;      
     }
-    else if (choice[0] === 'newL') // tactic: don't push, don't increase left pos, delete 'in-place
+    else if (choice[0] === 'newL') // tactic: don't push subexps (don't increase left pos, delete 'in-place)
     {
       if (sc.length > 0)
       {
@@ -526,6 +526,10 @@ function diff(n1s, n2s)
         {
           throw new Error(sc.at(-1)[EXP][TYPE]);
         }  
+        if (sl.at(-1)[EXP][sl.at(-1)[POS]+2] === n1s[i][TAG]) // only move l if current l pos points to exp actually being removed (else could be removing subexp at that pos)
+        {
+          sl.at(-1)[POS]++;
+        }
       }
       else
       {
