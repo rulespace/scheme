@@ -517,6 +517,7 @@ function diff(n1s, n2s)
         {
           genericEdit(['removeSimple', sl.at(-1)[EXP][TAG], sc.at(-1)[POS]]);
           remove(n1s[i]);
+          sl.at(-1)[POS]++; // assuming only lit/id
         }
         else if (sc.at(-1)[EXP][TYPE] === '$let' || sc.at(-1)[EXP][TYPE] === '$if')
         {
@@ -526,10 +527,6 @@ function diff(n1s, n2s)
         {
           throw new Error(sc.at(-1)[EXP][TYPE]);
         }  
-        if (sl.at(-1)[EXP][sl.at(-1)[POS]+2] === n1s[i][TAG]) // only move l if current l pos points to exp actually being removed (else could be removing subexp at that pos)
-        {
-          sl.at(-1)[POS]++;
-        }
       }
       else
       {
