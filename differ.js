@@ -1,9 +1,30 @@
 import { assertTrue } from './deps.ts';
 import { Null, Pair, SchemeParser, Sym } from './sexp-reader.js';
 
-export { diff, diffAst, ast2tuples, nodeMap }
+export { diff, diff2edits, coarsifyEdits, diffAst, ast2tuples, nodeMap, diff2string };
 
 // TODO: quote is handled as an application
+
+const MATCH = 0;
+const MODIFY = 1;
+const LEFT = 2;
+const RIGHT = 3;
+
+function diff2string(diff)
+{
+  let sb = "";
+  for (const [d, l] of diff)
+  {
+    switch (d)
+    {
+      case MATCH: l === 1 ? sb += 'M' : sb += `M(${l})`; break;
+      case MODIFY: sb += 'O'; break;
+      case LEFT: sb += 'L'; break;
+      case RIGHT: sb += 'R'; break;
+    }
+  }
+  return sb;
+}
 
 function ast2tuples(ast)
 {
@@ -192,7 +213,7 @@ function diffAst(p1, p2)
   return diff(n1s, n2s);
 }
 
-function step1(n1s, n1map, n2s, n2map)
+function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutions)
 {
   const initial = [[], 0, 0, 0];  // choices i j cost
   const leafs = [];
@@ -235,19 +256,22 @@ function step1(n1s, n1map, n2s, n2map)
       console.log(`solution ${cost} (todo ${todo.length})`);
       // console.log(choices);
       leafs.push([choices, cost]);
-      minCost = Math.min(minCost, cost); // TODO: check: actually minCost = cost (because of earlier test)
+      if (!keepSuboptimalSolutions)
+      {
+        minCost = Math.min(minCost, cost); // TODO: check: actually minCost = cost (because of earlier test)
+      }
       continue;
     }
 
     if (i === n1s.length)
     {
-      push([choices.concat([['newR', 1]]), i, j+1, cost + 100]);
+      push([choices.concat([[RIGHT, 1]]), i, j+1, cost + 100]);
       continue;
     }
     
     if (j === n2s.length)
     {
-      push([choices.concat([['newL', 1]]), i+1, j, cost + 100]);
+      push([choices.concat([[LEFT, 1]]), i+1, j, cost + 100]);
       continue;
     }
 
@@ -267,15 +291,15 @@ function step1(n1s, n1map, n2s, n2map)
     {
       // // pushMatch
       // const prevChoice = choices.at(-1);
-      // if (prevChoice !== undefined && prevChoice[0] === 'match')
+      // if (prevChoice !== undefined && prevChoice[0] === MATCH)
       // {
       //   const newChoices = choices.slice(0, -1);
-      //   newChoices.push(['match', prevChoice[1] + matches]);
+      //   newChoices.push([MATCH, prevChoice[1] + matches]);
       //   todo.push([newChoices, i + matches, j + matches, cost]);
       // }
       // else
       {
-        push([choices.concat([['match', matches]]), i+matches, j+matches, cost]);
+        push([choices.concat([[MATCH, matches]]), i+matches, j+matches, cost]);
       }
       //
     }
@@ -285,40 +309,40 @@ function step1(n1s, n1map, n2s, n2map)
       { 
         // const prevChoice = choices.at(-1);
 
-        // if (prevChoice !== undefined && prevChoice[0] === 'newL')
+        // if (prevChoice !== undefined && prevChoice[0] === LEFT)
         // {
         //   const newChoices = choices.slice(0, -1);
-        //   newChoices.push(['newL', prevChoice[1] + 1]);
+        //   newChoices.push([LEFT, prevChoice[1] + 1]);
         //   todo.push([newChoices, i + 1, j, cost + 100]);
         // }
         // else
 
         {
-          push([choices.concat([['newL', 1]]), i+1, j, cost + 100]);
+          push([choices.concat([[LEFT, 1]]), i+1, j, cost + 100]);
         }
 
-        // if (prevChoice !== undefined && prevChoice[0] === 'newR')
+        // if (prevChoice !== undefined && prevChoice[0] === RIGHT)
         // {
         //   const newChoices = choices.slice(0, -1);
-        //   newChoices.push(['newR', prevChoice[1] + 1]);
+        //   newChoices.push([RIGHT, prevChoice[1] + 1]);
         //   todo.push([newChoices, i, j + 1, cost + 100]);
         // }
         // else
         {
-          push([choices.concat([['newR', 1]]), i, j+1, cost + 100]);
+          push([choices.concat([[RIGHT, 1]]), i, j+1, cost + 100]);
         }
 
         if (left[0] === '$id' && left[0] === right[0] && left[2] !== right[2])
         {
-          push([choices.concat([['modify']]), i+1, j+1, cost + 1]);
+          push([choices.concat([[MODIFY]]), i+1, j+1, cost + 1]);
         }
         else if (left[0] === '$lit' && left[0] === right[0] && left[2] !== right[2])
         {
-          push([choices.concat([['modify']]), i+1, j+1, cost + 1]);
+          push([choices.concat([[MODIFY]]), i+1, j+1, cost + 1]);
         }
         else if (left[0] === '$param' && left[0] === right[0] && left[2] !== right[2])
         {
-          push([choices.concat([['modify']]), i+1, j+1, cost + 1]);
+          push([choices.concat([[MODIFY]]), i+1, j+1, cost + 1]);
         }
         else if (left[0] === right[0])
         {
@@ -326,15 +350,15 @@ function step1(n1s, n1map, n2s, n2map)
           {
             // pushMatch
             // const prevChoice = choices.at(-1);
-            // if (prevChoice !== undefined && prevChoice[0] === 'match')
+            // if (prevChoice !== undefined && prevChoice[0] === MATCH)
             // {
             //   const newChoices = choices.slice(0, -1);
-            //   newChoices.push(['match', prevChoice[1] + 1]);
+            //   newChoices.push([MATCH, prevChoice[1] + 1]);
             //   todo.push([newChoices, i + 1, j + 1, cost]);
             // }
             // else
             {
-              push([choices.concat([['match', 1]]), i+1, j+1, cost]);
+              push([choices.concat([[MATCH, 1]]), i+1, j+1, cost]);
             }
             //
           }
@@ -346,13 +370,13 @@ function step1(n1s, n1map, n2s, n2map)
   leafs.sort((a, b) => a[1] - b[1]); // TODO: dynamically track shortest instead of post-sort
   // console.log(leafs.slice(0, 100).join('\n'));
 
-  console.log(`solutions ${leafs.length}`);  
+  console.log(`solutions: ${leafs.length}`);  
   const [topChoices, cost] = leafs[0];
   console.log(`top choices (cost ${cost}):\n${topChoices.join('\n')}`);  
-  return topChoices;
+  return returnAllSolutions ? leafs.map(l => l[0]) : [topChoices];
 }
 
-function diff(n1s, n2s)
+function diff2edits(diff, n1s, n2s) // step2
 {
   const EXP = 0;
   const POS = 1;
@@ -360,14 +384,6 @@ function diff(n1s, n2s)
   const TYPE = 0;
   const TAG = 1;
   const VAL = 2; // $lit $id
-
-  const start = performance.now();
-  
-  const n1map = nodeMap(n1s);
-  const n2map = nodeMap(n2s);
-
-  const topChoices = step1(n1s, n1map, n2s, n2map);
-  console.log(`duration step 1 ${performance.now() - start}`);
 
   let c = 0;
   let i = 0;
@@ -381,7 +397,7 @@ function diff(n1s, n2s)
 
   function consumeChoice()
   {
-    return topChoices[c++];
+    return diff[c++];
   }
 
   function modifyVal(tag, pos, val)
@@ -418,13 +434,13 @@ function diff(n1s, n2s)
     edits.push(edit);
   }
 
-  while (c < topChoices.length)
+  while (c < diff.length)
   {
     const choice = consumeChoice();
     console.log(`${n1s[i]} ${choice[0]} ${n2s[j]}`);
     console.log(`\tl ${sl.at(-1)?.join(' ')} r ${sr.at(-1)?.join(' ')} c ${sc.at(-1)?.join(' ')}`);
 
-    if (choice[0] === 'match') // with a match TYPE n1s[i] === n2s[j] always
+    if (choice[0] === MATCH) // with a match TYPE n1s[i] === n2s[j] always
     {
       if (sc.length > 0)
       {
@@ -468,7 +484,7 @@ function diff(n1s, n2s)
       i += choice[1];
       j += choice[1];
     }
-    else if (choice[0] === 'modify') // with a modify TYPE n1s[i] === n2s[j] always; 'modify' acts like 'match' wrt. subexp pos
+    else if (choice[0] === MODIFY) // with a modify TYPE n1s[i] === n2s[j] always; 'modify' acts like 'match' wrt. subexp pos
     {
       modifyVal(n1s[i][TAG], 0, n2s[j][VAL]);
       if (sc.length > 0)
@@ -497,7 +513,7 @@ function diff(n1s, n2s)
       i++;
       j++;      
     }
-    else if (choice[0] === 'newL') // tactic: don't push subexps (don't increase left pos, delete 'in-place)
+    else if (choice[0] === LEFT) // tactic: don't push subexps (don't increase left pos, delete 'in-place)
     {
       if (sc.length > 0)
       {
@@ -534,7 +550,7 @@ function diff(n1s, n2s)
       }
       i++;      
     }
-    else if (choice[0] === 'newR')
+    else if (choice[0] === RIGHT)
     {
       if (sc.length > 0)
       {
@@ -635,7 +651,7 @@ function diff(n1s, n2s)
         // if right exhausted
         if (sr.at(-1)[POS] === sr.at(-1)[EXP].length - 2)
         {
-          console.log(`newR mode (comesFromRight): popping rc because r exhaused`);
+          console.log(`R mode (comesFromRight): popping rc because r exhaused`);
           console.log(`\tl ${sl.at(-1)?.join(' ')} r ${sr.at(-1)?.join(' ')} c ${sc.at(-1)?.join(' ')}`);
           const topc = sc.pop();
           sr.pop();
@@ -651,9 +667,12 @@ function diff(n1s, n2s)
   }
 
   console.log(`\nedits:\n${edits.join('\n')}`);
+  return edits;
+}
 
-////////////////////////////////
-  // turn modify etc. into add/remove 
+function coarsifyEdits(edits, n1s) // step 3: turn modify etc. into add/remove 
+{
+  const n1map = nodeMap(n1s);
 
   const modifs = [];
   const edits2 = [];
@@ -700,9 +719,19 @@ function diff(n1s, n2s)
   }
 
   console.log(`\nedits2:\n${edits2.join('\n')}`);
-
-  console.log(`total time ${performance.now() - start}`);
   return edits2;
+}
+
+function diff(n1s, n2s, options)
+{
+  const n1map = nodeMap(n1s);
+  const n2map = nodeMap(n2s);
+
+  const returnAllSolutions = options?.returnAllSolutions;
+  const keepSuboptimalSolutions = options?.keepSuboptimalSolutions;
+
+  const solutions = step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutions);
+  return solutions;
 }
 
 // function modify2addremove(n1s, edits)

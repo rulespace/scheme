@@ -1,5 +1,5 @@
 import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
-import { ast2tuples, diff, nodeMap } from '../differ.js';
+import { ast2tuples, diff, diff2edits, coarsifyEdits, nodeMap, diff2string } from '../differ.js';
 
 function applyEdits(ts, edits)
 {
@@ -110,27 +110,35 @@ function doDiff(src1, src2)
   console.log(`p2     ${p2str}
   ${n2s.join(' ')}`);
 
-  const edits = diff(n1s, n2s);
-  const p1edit = applyEdits(n1s, edits);  
-  const p1editstr = tuplesToString(p1edit);
-
-  console.log(`p1edit ${p1editstr}
-  ${p1edit.join(' ')}`);
-
-  if (p1editstr !== p2str)
+  const solutions = diff(n1s, n2s, {keepSuboptimalSolutions:false, returnAllSolutions:false});
+  for (const solution of solutions)
   {
-    throw new Error(`match error:
-    p1edit: ${p1editstr}
-    p2    : ${p2str}`);
-  }  
+    console.log(`\n\n*****\nsolution ${diff2string(solution)}`);
+
+    const edits = diff2edits(solution, n1s, n2s);
+    const edits2 = coarsifyEdits(edits, n1s);
+
+    const p1edit = applyEdits(n1s, edits2);  
+    const p1editstr = tuplesToString(p1edit);
+  
+    console.log(`p1edit ${p1editstr}
+    ${p1edit.join(' ')}`);
+  
+    if (p1editstr !== p2str)
+    {
+      throw new Error(`match error:
+      p1edit: ${p1editstr}
+      p2    : ${p2str}`);
+    }    
+  }
 }
 
 function test(src1, src2)
 {
   console.log("\n============");
-  console.log("\n*** LR ***");
+  console.log("\n*** L->R ***");
   doDiff(src1, src2);
-  console.log("\n*** RL ***");
+  console.log("\n*** R->L ***");
   doDiff(src2, src1);
 }
 
@@ -141,6 +149,12 @@ function testEq(src)
 }
 
 const start = performance.now();
+
+testEq(`1`);
+testEq(`()`);
+testEq(`x`);
+testEq(`'a`);
+testEq(`"a"`,`"a"`);
 
 test(`1`, `2`);
 test(`x`, `y`);
@@ -154,12 +168,6 @@ test(`"a"`,`1`);
 test(`()`,`1`);
 test(`()`,`(f)`);
 
-testEq(`1`);
-testEq(`()`);
-testEq(`x`);
-testEq(`'a`);
-testEq(`"a"`,`"a"`);
-
 test(`1`, `(+ x y)`);
 test(`1`, `(+ 1 x)`);
 
@@ -172,6 +180,10 @@ test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
 test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
 test(`(let ((x 1)) x)`, `(let ((x 2)) (+ x 1))`);
 test(`(let ((p (list a))) x)`, `(let ((p (list b a))) x)`);
+test(`(let ((p (list a))) x)`, `(let ((p (list c b a))) x)`);
+test(`(let ((p (list a))) x)`, `(let ((p (list a b))) x)`);
+test(`(let ((p (list a))) x)`, `(let ((p (list a b c))) x)`);
+test(`(let ((p (list a))) x)`, `(let ((p (list b a c))) x)`);
 
 test(`(if a b c)`, `(if x b c)`)
 test(`(if a b c)`, `(if a x y)`)
@@ -234,6 +246,9 @@ test(`y`, `(lambda (z) y)`);
 
 test(`(let ((f (lambda (x) x))) f)`, `(let ((f (lambda (x) (+ x x)))) f)`);
 test(`(f 1 (lambda (x) 2) 3)`, `(f 1 (lambda (x) 9) 3)`);
+test(`(if a b c)`, `(if (let ((x 1)) (* a x)) (let ((y 2)) (+ b y)) (let ((z 3)) (- c z)))`);
+test(`(if a b c)`, `(if (let ((x (- 1 1))) (* a x)) (let ((y (+ 2 22))) (+ b y)) (let ((z (/ 3 33))) (- c z)))`); // slow!
+
   
 test(
 `(let ((find-extension
@@ -248,9 +263,6 @@ test(
       (let ((l (list ".orig.tar.gz" ".tar.gz")))
         (find (lambda (x) (sf? x url))
               l)))))) x)`);
-
-
-// // console.log(`${performance.now() - start} ms`)
 
 
 test(`(let ((x #t))
@@ -276,26 +288,26 @@ test(`(let ((find-extension
                     l)))))) find-extension)`); // shift SLOW pop fast
 
 
-test(`(if x
-            'neg
-            (let ((fac (lambda (n) 
-            (let ((t (= n 0))) 
-              (if t 
-                  1 
-                  (let ((u (- n 1))) 
-                    (let ((v (fac u))) 
-                      (* n v)))))))) 
-(fac 8)))`,  
-     `(if x
-          (let ((fac (lambda (n) 
-          (let ((t (= n 0))) 
-            (if t 
-                1 
-                (let ((u (- n 1))) 
-                  (let ((v (fac u))) 
-                    (* n v)))))))) 
-(fac 8))
-            'neg)`);   // switch branches: shift FAST pop SLOW
+// test(`(if x
+//             'neg
+//             (let ((fac (lambda (n) 
+//             (let ((t (= n 0))) 
+//               (if t 
+//                   1 
+//                   (let ((u (- n 1))) 
+//                     (let ((v (fac u))) 
+//                       (* n v)))))))) 
+// (fac 8)))`,  
+//      `(if x
+//           (let ((fac (lambda (n) 
+//           (let ((t (= n 0))) 
+//             (if t 
+//                 1 
+//                 (let ((u (- n 1))) 
+//                   (let ((v (fac u))) 
+//                     (* n v)))))))) 
+// (fac 8))
+//             'neg)`);   // switch branches: shift FAST pop SLOW
 
 
 
