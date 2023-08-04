@@ -1,7 +1,7 @@
 import { assertTrue } from './deps.ts';
 import { Null, Pair, SchemeParser, Sym } from './sexp-reader.js';
 
-export { diff, diff2edits, coarsifyEdits, diffAst, ast2tuples, nodeMap, diff2string };
+export { nodeStream, nodeMap, diff, diff2edits, coarsifyEdits, applyEdits, tuples2string, diff2string };
 
 // TODO: quote is handled as an application
 
@@ -203,16 +203,6 @@ function nodeMap(ts)
   return m;
 }
 
-function diffAst(p1, p2)
-{
-  const n1s = ast2tuples(p1);
-  const n2s = ast2tuples(p2);
-
-  console.log(`p1 exploded tuples\n${n1s.join('\n')}`);
-
-  return diff(n1s, n2s);
-}
-
 function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutions)
 {
   const initial = [[], 0, 0, 0];  // choices i j cost
@@ -275,13 +265,13 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
       continue;
     }
 
-    if (Math.round(performance.now()) % 1000 === 0) // DEBUG
-    {
-      // todo.sort((a, b) => a[1] - b[1]); // b-a => high to low
-      // todo.splice(0, todo.length % 2);
-      console.log(i, n1s.length, j, n2s.length, todo.length, cost, minCost);    
-      // console.log(`cheapest i ${todo.at(-1)[1]} j ${todo.at(-1)[2]} cost ${todo.at(-1)[3]}`);
-    }
+    // if (Math.round(performance.now()) % 1000 === 0) // DEBUG
+    // {
+    //   // todo.sort((a, b) => a[1] - b[1]); // b-a => high to low
+    //   // todo.splice(0, todo.length % 2);
+    //   console.log(i, n1s.length, j, n2s.length, todo.length, cost, minCost);    
+    //   // console.log(`cheapest i ${todo.at(-1)[1]} j ${todo.at(-1)[2]} cost ${todo.at(-1)[3]}`);
+    // }
 
     const left = n1s[i];
     const right = n2s[j];
@@ -289,83 +279,35 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
     const matches = subtreeMatches(left, n1map, right, n2map);
     if (matches > 0)
     {
-      // // pushMatch
-      // const prevChoice = choices.at(-1);
-      // if (prevChoice !== undefined && prevChoice[0] === MATCH)
-      // {
-      //   const newChoices = choices.slice(0, -1);
-      //   newChoices.push([MATCH, prevChoice[1] + matches]);
-      //   todo.push([newChoices, i + matches, j + matches, cost]);
-      // }
-      // else
-      {
         push([choices.concat([[MATCH, matches]]), i+matches, j+matches, cost]);
-      }
-      //
     }
     else
     {
-      // SHOULD THIS BE EXCLUSIVE (in the 'else' part) WITH MATCH? e.g. (f *a b) -> (f *a a b) should not be M by default (can also be R)
-      { 
-        // const prevChoice = choices.at(-1);
+      push([choices.concat([[LEFT, 1]]), i+1, j, cost + 100]);
+      push([choices.concat([[RIGHT, 1]]), i, j+1, cost + 100]);
 
-        // if (prevChoice !== undefined && prevChoice[0] === LEFT)
-        // {
-        //   const newChoices = choices.slice(0, -1);
-        //   newChoices.push([LEFT, prevChoice[1] + 1]);
-        //   todo.push([newChoices, i + 1, j, cost + 100]);
-        // }
-        // else
-
+      if (left[0] === right[0])
+      {
+        if (left[0] === '$id' || left[0] === '$lit' || left[0] === '$param')
         {
-          push([choices.concat([[LEFT, 1]]), i+1, j, cost + 100]);
+          // if (left[2] !== right[2])
+          // {
+          //   push([choices.concat([[MODIFY, 1]]), i+1, j+1, cost + 1]);
+          // }
+          
+          // no M for simple (non-compound) here (possible M from subtree matches higher up)
         }
-
-        // if (prevChoice !== undefined && prevChoice[0] === RIGHT)
-        // {
-        //   const newChoices = choices.slice(0, -1);
-        //   newChoices.push([RIGHT, prevChoice[1] + 1]);
-        //   todo.push([newChoices, i, j + 1, cost + 100]);
-        // }
-        // else
+        else // always compound
         {
-          push([choices.concat([[RIGHT, 1]]), i, j+1, cost + 100]);
-        }
-
-        if (left[0] === '$id' && left[0] === right[0] && left[2] !== right[2])
-        {
-          push([choices.concat([[MODIFY]]), i+1, j+1, cost + 1]);
-        }
-        else if (left[0] === '$lit' && left[0] === right[0] && left[2] !== right[2])
-        {
-          push([choices.concat([[MODIFY]]), i+1, j+1, cost + 1]);
-        }
-        else if (left[0] === '$param' && left[0] === right[0] && left[2] !== right[2])
-        {
-          push([choices.concat([[MODIFY]]), i+1, j+1, cost + 1]);
-        }
-        else if (left[0] === right[0])
-        {
-          if (left[0] === '$let' || left[0] === '$letrec' || left[0] === '$if' || left[0] === '$lam' || left[0] === '$app')
+          // if (left[0] === '$let' || left[0] === '$letrec' || left[0] === '$if' || left[0] === '$lam' || left[0] === '$app')
           {
-            // pushMatch
-            // const prevChoice = choices.at(-1);
-            // if (prevChoice !== undefined && prevChoice[0] === MATCH)
-            // {
-            //   const newChoices = choices.slice(0, -1);
-            //   newChoices.push([MATCH, prevChoice[1] + 1]);
-            //   todo.push([newChoices, i + 1, j + 1, cost]);
-            // }
-            // else
-            {
-              push([choices.concat([[MATCH, 1]]), i+1, j+1, cost]);
-            }
-            //
+            push([choices.concat([[MATCH, 1]]), i+1, j+1, cost]);
           }
-        }
+        }  
       }
     }
   }
+
 
   leafs.sort((a, b) => a[1] - b[1]); // TODO: dynamically track shortest instead of post-sort
   // console.log(leafs.slice(0, 100).join('\n'));
@@ -802,6 +744,13 @@ function coarsifyEdits(edits, n1s) // step 3: turn modify etc. into add/remove
   return edits2;
 }
 
+function nodeStream(src, parser)
+{
+  const p = parser.parse(src).car;
+  const ns = ast2tuples(p);
+  return ns;
+}
+
 function diff(n1s, n2s, options)
 {
   const n1map = nodeMap(n1s);
@@ -814,19 +763,97 @@ function diff(n1s, n2s, options)
   return solutions;
 }
 
-// function modify2addremove(n1s, edits)
-// {
-// }
+function applyEdits(ts, edits)
+{
+  ts = ts.map(t => t.slice(0));
+  const m = nodeMap(ts);
+  for (const edit of edits)
+  {
+    switch (edit[0])
+    {
+      case 'replace':
+        {
+          m[edit[1][1]] = edit[2];
+          break;
+        }
+      case 'add':
+        {
+          m[edit[1][1]] = edit[1];
+          break;
+        }
+      case 'remove':
+        {
+          m[edit[1][1]] = undefined;
+          break;
+        }
+      default: throw new Error(`cannot handle edit ${edit}`);
+    }
+  }
 
-// const parser = new SchemeParser();
-// // const p1 = parser.parse(`(let ((f (lambda (x y) (+ x y)))) (f 1 2))`);
-// // const p2 = parser.parse(`(let ((f (lambda (x z y) (+ x y)))) (f 1 99 2))`);
+  const isSubexp = [];
+  for (const t of m)
+  {
+    if (t === undefined)
+    {
+      continue;
+    }
+    if (isSubexp[t[1]] === undefined)
+    {
+      isSubexp[t[1]] = false;
+    }
+    for (let i = 2; i < t.length; i++)
+    {
+      isSubexp[t[i]] = true;
+    }
+  }
 
-// interesting case: match,2 modify newR,2 match,1 newR,1 (captures intent?) vs. match,2 newR,4 match,1 newL,1
-// const p1 = parser.parse(`(let ((x 1)) x)`);
-// const p2 = parser.parse(`(let ((x 2)) (+ x 1))`);
+  const rooti = isSubexp.findIndex(x => x === false);
+  const root = m[rooti]; 
+  m[rooti] = m[0];
+  m[0] = root;
+  return m.filter(x => x);
+}
 
-// const p1 = parser.parse(`(lambda (x) (+ 1 2))`);
-// const p2 = parser.parse(`(lambda (x y) z)`);
+function tuples2string(tuples)
+{
 
-// console.log(diff(p1.car, p2.car));
+  const m = nodeMap(tuples);
+
+  function stringify(t)
+  {
+    switch (t[0])
+    {
+      case '$lit':
+      case '$id':
+      case '$param':
+        {
+          return t[2];
+        }
+      case '$let':
+        {
+          return `(let ((${stringify(m[t[2]])} ${stringify(m[t[3]])})) ${stringify(m[t[4]])})`;
+        }
+      case '$letrec':
+        {
+          return `(letrec ((${stringify(m[t[2]])} ${stringify(m[t[3]])})) ${stringify(m[t[4]])})`;
+        }
+      case '$if':
+        {
+          return `(if ${stringify(m[t[2]])} ${stringify(m[t[3]])} ${stringify(m[t[4]])})`;
+        }
+      case '$lam':
+        {
+          return `(lambda (${t.slice(2, -1).map(x => stringify(m[x])).join(' ')}) ${stringify(m[t.at(-1)])})`;
+        }
+      case '$app':
+        {
+          return `(${stringify(m[t[2]])} ${t.slice(3).map(x => stringify(m[x])).join(' ')})`;
+        }
+      default: throw new Error(`cannot handle ${t}`);
+    }
+  }
+
+  return stringify(tuples[0]);
+}
+
+
