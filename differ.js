@@ -372,14 +372,19 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
 
   console.log(`solutions: ${leafs.length}`);  
   const [topChoices, cost] = leafs[0];
-  console.log(`top choices (cost ${cost}):\n${topChoices.join('\n')}`);  
+  // console.log(`top choices (cost ${cost}):\n${topChoices.join('\n')}`);  
   return returnAllSolutions ? leafs.map(l => l[0]) : [topChoices];
 }
 
 function diff2edits(diff, n1s, n2s) // step2
 {
   const EXP = 0;
-  const POS = 1;
+  const ORIG = 1;
+  const POS = 2;
+  const LEN = 3;
+
+  const LPOS = 4;
+  const LLEN = 5;
 
   const TYPE = 0;
   const TAG = 1;
@@ -389,8 +394,6 @@ function diff2edits(diff, n1s, n2s) // step2
   let i = 0;
   let j = 0;
 
-  const sl = [];
-  const sr = [];
   const sc = [];
 
   const edits = [];
@@ -437,34 +440,52 @@ function diff2edits(diff, n1s, n2s) // step2
   while (c < diff.length)
   {
     const choice = consumeChoice();
-    console.log(`${n1s[i]} ${choice[0]} ${n2s[j]}`);
-    console.log(`\tl ${sl.at(-1)?.join(' ')} r ${sr.at(-1)?.join(' ')} c ${sc.at(-1)?.join(' ')}`);
+    console.log(`${n1s[i]} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice[0]] + (choice[1] === 1 ? '' : `(${choice[1]})`)}%c ${n2s[j]}`, 'color:blue', 'color:default');
 
     if (choice[0] === MATCH) // with a match TYPE n1s[i] === n2s[j] always
     {
       if (sc.length > 0)
       {
-        const currentPos = sc.at(-1)[POS];
-        const comesFromLeft = sl.length > 0 && sc.at(-1)[EXP][TAG] === sl.at(-1)[EXP][TAG];
-        if (comesFromLeft)
+        const exp = sc.at(-1)[EXP];
+        const orig = sc.at(-1)[ORIG];
+        const pos = sc.at(-1)[POS];
+        const len = sc.at(-1)[LEN];
+        
+        const comesFromRight = (orig === 'R');
+        if (comesFromRight)
         {
-          // when comesFromLeft then a match means potentially rewriting a tag in an existing element, so we use modify
-          const currentPosTag = sc.at(-1)[EXP][currentPos+2];
-          // check whether a match is actually necessary
-          if (currentPosTag !== n1s[i][TAG])
-          {
-            modifyTag(sc.at(-1)[EXP][TAG], currentPos, n1s[i][TAG]); // modify pos in left (left===current when comeFromLeft)
-          }
-        }
-        else // comesFromRight
-        {
+          console.log(`\t${exp} ${orig} ${pos}/${len}`);
           // when comeFromRight then a match means "prefer left" somewhere in a right el, so we always overwrite
-          console.log(`\t\tmatch overwrite ${sc.at(-1)[EXP]} ${currentPos} ${n1s[i][TAG]}`); 
-          sc.at(-1)[EXP][currentPos+2] = n1s[i][TAG]; // overwrite pos in current
+          console.log(`\t\tmatch overwrite ${exp} ${pos} ${n1s[i][TAG]}`); 
+          exp[pos+2] = n1s[i][TAG]; // overwrite pos in current
+        }
+        else // comesFromLeft: with a match, this means el is already there???
+        {
+          const lpos = sc.at(-1)[LPOS];
+          const llen = sc.at(-1)[LLEN];
+          console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
+          // when comesFromLeft then a match means potentially rewriting a tag in an existing element, so we use modify
+          // check whether a match is actually necessary
+          if (exp[pos+2] !== n1s[i][TAG]) // both notEq and not in range (i.e. insertTag)??
+          {
+            modifyTag(exp[TAG], pos, n1s[i][TAG]); // modify pos in left (left===current when comeFromLeft)
+          }
+
+          if (exp[TYPE] === '$app')
+          {
+            if (pos === len - 1)
+            {
+              const remainingArgsOnLeft = llen - lpos - 1;
+              console.log(`\tadded final argument, removing ${remainingArgsOnLeft} left args`);
+              for (let q = 0; q < remainingArgsOnLeft; q++)
+              {
+                genericEdit(['removeSimple', exp[TAG], pos + 1]);
+              }
+            }
+          }
+          sc.at(-1)[LPOS]++;
         }
         sc.at(-1)[POS]++;
-        if (sl.length > 0) sl.at(-1)[POS]++; // TODO: move inside comesFromLeft block?
-        if (sr.length > 0) sr.at(-1)[POS]++; // TODO: ^ comesFromRight?
       }
       
       if (n1s[i][TYPE] === '$id' || n1s[i][TYPE] === '$lit' || n1s[i][TYPE] === '$param')
@@ -477,9 +498,7 @@ function diff2edits(diff, n1s, n2s) // step2
       }
       else
       {
-        sl.push([n1s[i], 0]);
-        sr.push([n2s[j], 0]);
-        sc.push([n1s[i].slice(0), 0]); // TODO: check: ever mutated? (currently not?: only 'modif' events but not rewriting when current comesFromLef)
+        sc.push([n1s[i], 'L', 0, n2s[j].length-2, 0, n1s[i].length-2]); // not mutated when comesFromLeft
       }
       i += choice[1];
       j += choice[1];
@@ -489,25 +508,43 @@ function diff2edits(diff, n1s, n2s) // step2
       modifyVal(n1s[i][TAG], 0, n2s[j][VAL]);
       if (sc.length > 0)
       {
-        const currentPos = sc.at(-1)[POS];
-        const comesFromLeft = sl.length > 0 && sc.at(-1)[EXP][TAG] === sl.at(-1)[EXP][TAG];
-        if (comesFromLeft)
+        const exp = sc.at(-1)[EXP];
+        const orig = sc.at(-1)[ORIG];
+        const pos = sc.at(-1)[POS];
+        const len = sc.at(-1)[LEN];
+        
+        const comesFromRight = (orig === 'R');
+        if (comesFromRight)
         {
+          console.log(`\t${exp} ${orig} ${pos}/${len}`);
+          console.log(`\t\tmodify overwrite ${exp} ${pos} ${n1s[i][TAG]}`); 
+          exp[pos+2] = n1s[i][TAG]; // overwrite pos in current
+        }
+        else // comesFromLeft
+        {
+          const lpos = sc.at(-1)[LPOS];
+          const llen = sc.at(-1)[LLEN];
+          console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
           // when comesFromLeft then a modify means potentially rewriting a tag in an existing element, so we use modify
-          const currentPosTag = sc.at(-1)[EXP][currentPos+2];
-          // check whether a match is actually necessary
-          if (currentPosTag !== n1s[i][TAG])
+          if (exp[pos+2] !== n1s[i][TAG])
           {
-            modifyTag(sc.at(-1)[EXP][TAG], currentPos, n1s[i][TAG]); // modify pos in left (left===current when comeFromLeft)
-          }        
+            modifyTag(exp[TAG], pos, n1s[i][TAG]); // modify pos in left (left===current when comeFromLeft)        
+          }
+
+          if (exp[TYPE] === '$app')
+          {
+            if (pos === len - 1)
+            {
+              const remainingArgsOnLeft = llen - lpos - 1;
+              console.log(`\tadded final argument, removing ${remainingArgsOnLeft} left args`);
+              for (let q = 0; q < remainingArgsOnLeft; q++)
+              {
+                genericEdit(['removeSimple', exp[TAG], pos + 1]);
+              }
+            }
+          }
+          sc.at(-1)[LPOS]++;
         }
-        else // comesFromRight
-        {
-          console.log(`\t\tmodify overwrite ${sc.at(-1)[EXP]} ${currentPos} ${n1s[i][TAG]}`); 
-          sc.at(-1)[EXP][currentPos+2] = n1s[i][TAG]; // overwrite pos in current
-        }
-        if (sl.length > 0) sl.at(-1)[POS]++;
-        if (sr.length > 0) sr.at(-1)[POS]++;
         sc.at(-1)[POS]++;  
       }
       i++;
@@ -515,38 +552,58 @@ function diff2edits(diff, n1s, n2s) // step2
     }
     else if (choice[0] === LEFT) // tactic: don't push subexps (don't increase left pos, delete 'in-place)
     {
+      remove(n1s[i]);
       if (sc.length > 0)
       {
-        if (sc.at(-1)[EXP][TYPE] === '$lam')
+        const exp = sc.at(-1)[EXP];
+        const orig = sc.at(-1)[ORIG];
+        const pos = sc.at(-1)[POS];
+        const len = sc.at(-1)[LEN];
+        
+        const comesFromRight = (orig === 'R');
+        if (comesFromRight)
         {
-          if (n1s[i][TYPE] === '$param')
+          console.log(`\t${exp} ${orig} ${pos}/${len}`);
+          // nothing    
+        }
+        else // comesFromLeft
+        {
+          const lpos = sc.at(-1)[LPOS];
+          const llen = sc.at(-1)[LLEN];
+          console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
+
+          if (sc.at(-1)[EXP][TYPE] === '$lam')
           {
-            genericEdit(['removeSimple', sl.at(-1)[EXP][TAG], sc.at(-1)[POS]]);
-            remove(n1s[i]);
+            if (n1s[i][TYPE] === '$param')
+            {
+              genericEdit(['removeSimple', exp[TAG], pos]);
+            }
+            else // removing body
+            {
+              // nothing
+            }
           }
-          else // removing body
+          else if (exp[TYPE] === '$app')
           {
-            remove(n1s[i]);
+            genericEdit(['removeSimple', exp[TAG], pos]);
+          }
+          else if (exp[TYPE] === '$let' || exp[TYPE] === '$if')
+          {
+            // nothing
+          }
+          else
+          {
+            throw new Error(exp[TYPE]);
+          }
+          if (exp[lpos+2] === n1s[i][TAG])
+          {
+            sc.at(-1)[LPOS]++;
           }
         }
-        else if (sc.at(-1)[EXP][TYPE] === '$app')
-        {
-          genericEdit(['removeSimple', sl.at(-1)[EXP][TAG], sc.at(-1)[POS]]);
-          remove(n1s[i]);
-          sl.at(-1)[POS]++; // assuming only lit/id
-        }
-        else if (sc.at(-1)[EXP][TYPE] === '$let' || sc.at(-1)[EXP][TYPE] === '$if')
-        {
-          remove(n1s[i]);
-        }
-        else
-        {
-          throw new Error(sc.at(-1)[EXP][TYPE]);
-        }  
       }
       else
       {
-        remove(n1s[i]);
+        // nothing
       }
       i++;      
     }
@@ -554,69 +611,91 @@ function diff2edits(diff, n1s, n2s) // step2
     {
       if (sc.length > 0)
       {
-        const comesFromLeft = sl.length > 0 && sc.at(-1)[EXP][TAG] === sl.at(-1)[EXP][TAG];
-
-        if (comesFromLeft)
+        const exp = sc.at(-1)[EXP];
+        const orig = sc.at(-1)[ORIG];
+        const pos = sc.at(-1)[POS];
+        const len = sc.at(-1)[LEN];
+        
+        const comesFromRight = (orig === 'R');
+        if (comesFromRight)
         {
-          if (sc.at(-1)[EXP][TYPE] === '$lam')
+          console.log(`\t${exp} ${orig} ${pos}/${len}`);
+          sc.at(-1)[POS]++;
+        }
+        else // comesFromLeft
+        {
+          const lpos = sc.at(-1)[LPOS];
+          const llen = sc.at(-1)[LLEN];
+          console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
+
+          if (exp[TYPE] === '$lam')
           {
             if (n2s[j][TYPE] === '$param')
             {
-              genericEdit(['insertSimple', sc.at(-1)[EXP][TAG], sc.at(-1)[POS], n2s[j][TAG]]);
+              genericEdit(['insertSimple', exp[TAG], pos, n2s[j][TAG]]);
+              sc.at(-1)[POS]++;
             }
-            else // adding new body
+            else // adding new body (could also use pos and len as for $app)
             {
-              //(1) removing params
-              const numParamsToRemove = sl.at(-1)[EXP].length - sr.at(-1)[EXP].length;
-              for (let p = 0; p < numParamsToRemove; p++)
+              console.log(`\tadding body`);
+              modifyTag(exp[TAG], pos, n2s[j][TAG]);
+              const numParamsToRemove = llen - lpos - 1; // num params remaining on left
+              if (numParamsToRemove > 0)
               {
-                genericEdit(['removeSimple', sc.at(-1)[EXP][TAG], sc.at(-1)[POS]]);
+                console.log(`\tremoving ${numParamsToRemove} params`);
+                for (let q = 0; q < numParamsToRemove; q++)
+                {
+                  genericEdit(['removeSimple', exp[TAG], pos + 1]);
+                  sc.at(-1)[LPOS]++;  
+                }
               }
-              modifyTag(sc.at(-1)[EXP][TAG], sc.at(-1)[POS], n2s[j][TAG]);
-              //(2) removing (?params and) body ([can be] consequence of inserting params)
-              const numXToRemove = sc.at(-1)[POS] - sl.at(-1)[POS];
-              for (let q = 0; q < numXToRemove; q++)
-              {
-                genericEdit(['removeSimple', sc.at(-1)[EXP][TAG], sc.at(-1)[POS] + 1]); // TODO actually not remove'Simple' (body exp can be anything)
-              }
+              sc.at(-1)[POS]++;
             }
           }
-          else if (sc.at(-1)[EXP][TYPE] === '$app')
+          else if (exp[TYPE] === '$app')
           {
             if (n2s[j][TYPE] === '$id' || n2s[j][TYPE] === '$lit')
             {
-              genericEdit(['insertSimple', sc.at(-1)[EXP][TAG], sc.at(-1)[POS], n2s[j][TAG]]);
+              genericEdit(['insertSimple', exp[TAG], pos, n2s[j][TAG]]);
+              if (pos === len - 1)
+              {
+                const remainingArgsOnLeft = llen - lpos;
+                console.log(`\tadded final argument, removing ${remainingArgsOnLeft} left args`);
+                for (let q = 0; q < remainingArgsOnLeft; q++)
+                {
+                  genericEdit(['removeSimple', exp[TAG], pos]);
+                }
+              }
+              sc.at(-1)[POS]++;
             }
             else
             {
               throw new Error(`unexpected argument expression type ${n2s[j]}`);
             }
           }
-          else if (sc.at(-1)[EXP][TYPE] === '$let' || sc.at(-1)[EXP][TYPE] === '$if')
+          else if (exp[TYPE] === '$let' || exp[TYPE] === '$if')
           {
-            modifyTag(sc.at(-1)[EXP][TAG], sc.at(-1)[POS], n2s[j][TAG]);
+            modifyTag(exp[TAG], pos, n2s[j][TAG]);
+            sc.at(-1)[POS]++;
           }
           else
           {
-            throw new Error(sc.at(-1)[EXP][TYPE]);
+            throw new Error(exp[TYPE]);
           }
         }
-        else // comesFromRight
-        {
-          // nothing
-        }
+      }
+      else // nothing on stack
+      {
+        // nothing
       }
 
-      if (sr.length > 0) sr.at(-1)[POS]++;
-      if (sc.length > 0) sc.at(-1)[POS]++;
       if (n2s[j][TYPE] === '$id' || n2s[j][TYPE] === '$lit' || n2s[j][TYPE] === '$param')
       {
         add(n2s[j]);
       }
       else
       {
-        sr.push([n2s[j], 0]);
-        sc.push([n2s[j].slice(0), 0]);
+        sc.push([n2s[j].slice(0), 'R', 0, n2s[j].length-2]);
         // adding will happen on pop
       }
       j++;      
@@ -626,37 +705,38 @@ function diff2edits(diff, n1s, n2s) // step2
       throw new Error(choice[0]);
     }
 
-    while (sc.at(-1))
+    while (sc.length > 0)
     {
-      const comesFromLeft = sl.length > 0 && sc.at(-1)[EXP][TAG] === sl.at(-1)[EXP][TAG]; // current comes from left: matching mode
+      const exp = sc.at(-1)[EXP];
+      const orig = sc.at(-1)[ORIG];
+      const pos = sc.at(-1)[POS];
+      const len = sc.at(-1)[LEN];
 
-      if (comesFromLeft)
+      const comesFromRight = (orig === 'R');
+      
+      if (comesFromRight)
       {
-        // make sure left and right are exhausted
-        if (sl.at(-1)[POS] === sl.at(-1)[EXP].length - 2 && sr.length > 0 && sr.at(-1)[POS] === sr.at(-1)[EXP].length - 2)
-        {
-          console.log(`match mode (comesFromLeft): popping lrc because lr exhaused`);
-          console.log(`\tl ${sl.at(-1)?.join(' ')} r ${sr.at(-1)?.join(' ')} c ${sc.at(-1)?.join(' ')}`);
-          sl.pop();
-          sr.pop();
-          sc.pop();
+        if (pos === len)
+        {    
+          console.log(`\t${exp} ${orig} ${pos}/${len}`)
+          console.log(`\tpopping`);
+          const topc = sc.pop();
+          add(topc[EXP]);
         }
         else
         {
           break;
         }
       }
-      else // comes from right
+      else // comesFromLeft
       {
-        // if right exhausted
-        if (sr.at(-1)[POS] === sr.at(-1)[EXP].length - 2)
+        const lpos = sc.at(-1)[LPOS];
+        const llen = sc.at(-1)[LLEN];
+        if (pos === len)
         {
-          console.log(`R mode (comesFromRight): popping rc because r exhaused`);
-          console.log(`\tl ${sl.at(-1)?.join(' ')} r ${sr.at(-1)?.join(' ')} c ${sc.at(-1)?.join(' ')}`);
-          const topc = sc.pop();
-          sr.pop();
-          // 'late' add of current that came from right and may have overwritten tags
-          add(topc[EXP]);
+          console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
+          console.log(`\tlr exhausted: popping`);
+          sc.pop();
         }
         else
         {

@@ -110,7 +110,7 @@ function doDiff(src1, src2)
   console.log(`p2     ${p2str}
   ${n2s.join(' ')}`);
 
-  const solutions = diff(n1s, n2s, {keepSuboptimalSolutions:false, returnAllSolutions:false});
+  const solutions = diff(n1s, n2s, {keepSuboptimalSolutions:false, returnAllSolutions:true});
   for (const solution of solutions)
   {
     console.log(`\n\n*****\nsolution ${diff2string(solution)}`);
@@ -129,7 +129,8 @@ function doDiff(src1, src2)
       throw new Error(`match error:
       p1edit: ${p1editstr}
       p2    : ${p2str}`);
-    }    
+    }
+    
   }
 }
 
@@ -179,16 +180,18 @@ test(`(let ((x 1)) x)`, `(let ((x (+ 2 z))) x)`);
 test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
 test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
 test(`(let ((x 1)) x)`, `(let ((x 2)) (+ x 1))`);
-test(`(let ((p (list a))) x)`, `(let ((p (list b a))) x)`);
+test(`(let ((p (list a))) x)`, `(let ((p (list b a))) x)`); // (3)
 test(`(let ((p (list a))) x)`, `(let ((p (list c b a))) x)`);
 test(`(let ((p (list a))) x)`, `(let ((p (list a b))) x)`);
 test(`(let ((p (list a))) x)`, `(let ((p (list a b c))) x)`);
 test(`(let ((p (list a))) x)`, `(let ((p (list b a c))) x)`);
 
-test(`(if a b c)`, `(if x b c)`)
-test(`(if a b c)`, `(if a x y)`)
-test(`(if a b c)`, `(if a c b)`)
+
+test(`(if a b c)`, `(if x b c)`);
+test(`(if a b c)`, `(if a x y)`);
+test(`(if a b c)`, `(if a c b)`);
 test(`(if a b c)`, `(if a (+ x y) (+ r s))`);
+test(`(if x neg (let ((fac x)) 8))`, `(if x (let ((fac x)) 8) neg)`); // interesting: M(4)
 
 test(`(foo f g h)`, `(bar f g h)`);
 test(`(foo f g h)`, `(foo x g h)`);
@@ -228,7 +231,11 @@ test(`(lambda (x) x)`, `(lambda (x) (+ x x))`);
 test(`(lambda (x y) x)`, `(lambda (x y) (+ x y))`);
 test(`(lambda (x y) x)`, `(lambda (x) (+ x y))`); // interesting 'quick' example MMLRRMR, but currently getting MMRRLMR (diff, solved diff2)
 test(`(lambda (x) y)`, `(lambda (x y) z)`);
-test(`(lambda (x) (lambda (y) z))`, `(lambda (x y) z)`); // (1)
+test(`y`, `(lambda () y)`);
+test(`y`, `(lambda (y) z)`);
+test(`y`, `(lambda (z) y)`);
+
+test(`(lambda (x y) z)`, `(lambda (x) (lambda (y) z))`); // (1)
 test(`(lambda (o x) (lambda (y) z))`, `(lambda (o x y) z)`);
 test(`(lambda (x o) (lambda (y) z))`, `(lambda (x o y) z)`);
 test(`(lambda (x) (lambda (o y) z))`, `(lambda (x o y) z)`);
@@ -240,14 +247,10 @@ test(`(lambda (y a b) z)`, `(lambda (x) (lambda (y a b) z))`);
 test(`(lambda (y) z)`, `(lambda (x a b) (lambda (y) z))`);
 test(`(lambda (x) (lambda (y z) z))`, `(lambda (x y) (lambda (z) z))`); // 'param jump' but intervening lambda!
 test(`(lambda () (lambda () f))`, `(lambda () (lambda (f) f))`);
-test(`y`, `(lambda () y)`);
-test(`y`, `(lambda (y) z)`);
-test(`y`, `(lambda (z) y)`);
 
 test(`(let ((f (lambda (x) x))) f)`, `(let ((f (lambda (x) (+ x x)))) f)`);
 test(`(f 1 (lambda (x) 2) 3)`, `(f 1 (lambda (x) 9) 3)`);
 test(`(if a b c)`, `(if (let ((x 1)) (* a x)) (let ((y 2)) (+ b y)) (let ((z 3)) (- c z)))`);
-test(`(if a b c)`, `(if (let ((x (- 1 1))) (* a x)) (let ((y (+ 2 22))) (+ b y)) (let ((z (/ 3 33))) (- c z)))`); // slow!
 
   
 test(
@@ -288,32 +291,31 @@ test(`(let ((find-extension
                     l)))))) find-extension)`); // shift SLOW pop fast
 
 
-// test(`(if x
-//             'neg
-//             (let ((fac (lambda (n) 
-//             (let ((t (= n 0))) 
-//               (if t 
-//                   1 
-//                   (let ((u (- n 1))) 
-//                     (let ((v (fac u))) 
-//                       (* n v)))))))) 
-// (fac 8)))`,  
-//      `(if x
-//           (let ((fac (lambda (n) 
-//           (let ((t (= n 0))) 
-//             (if t 
-//                 1 
-//                 (let ((u (- n 1))) 
-//                   (let ((v (fac u))) 
-//                     (* n v)))))))) 
-// (fac 8))
-//             'neg)`);   // switch branches: shift FAST pop SLOW
+test(`(if x
+            'neg
+            (let ((fac (lambda (n) 
+            (let ((t (= n 0))) 
+              (if t 
+                  1 
+                  (let ((u (- n 1))) 
+                    (let ((v (fac u))) 
+                      (* n v)))))))) 
+(fac 8)))`,  
+     `(if x
+          (let ((fac (lambda (n) 
+          (let ((t (= n 0))) 
+            (if t 
+                1 
+                (let ((u (- n 1))) 
+                  (let ((v (fac u))) 
+                    (* n v)))))))) 
+(fac 8))
+            'neg)`);   // switch branches: shift FAST pop SLOW
 
 
 
 // test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
 // test(Deno.readTextFileSync('diffdata/regex1-smaller-left.scm'), Deno.readTextFileSync('diffdata/regex1-smaller-right.scm'));
 // test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-smallest-right.scm'));
-// test(`(let ((x 1)) x)`, `(let ((y 1)) x)`);
 
 // deno test --allow-read diff.test.js
