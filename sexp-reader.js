@@ -273,7 +273,11 @@ function SchemeTokenizer(str)
 SchemeTokenizer.prototype.next =
   function ()
   {
-    var c = this.skipWhitespace();
+    let c = this.skipWhitespace();
+    if (c === null) // TODO: cleanup "" vs. null
+    {
+      return null;
+    }
     return this.parse(c);
   }
 

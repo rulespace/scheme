@@ -11,15 +11,15 @@ function doDiff(src1, src2)
   const n2s = nodeStream(src2, parser);
   const p2str = tuples2string(n2s);
 
-  console.log(`p1     ${p1str}
-  ${n1s.join(' ')}`);
-  console.log(`p2     ${p2str}
-  ${n2s.join(' ')}`);
+  // console.log(`p1     ${p1str}
+  // ${n1s.join(' ')}`);
+  // console.log(`p2     ${p2str}
+  // ${n2s.join(' ')}`);
 
   const solutions = diff(n1s, n2s);
   for (const solution of solutions)
   {
-    console.log(`\n\n*****\nsolution ${diff2string(solution)}`);
+    // console.log(`\n\n*****\nsolution ${diff2string(solution)}`);
 
     const edits = diff2edits(solution, n1s, n2s);
     const edits2 = coarsifyEdits(edits, n1s);
@@ -27,8 +27,8 @@ function doDiff(src1, src2)
     const p1edit = applyEdits(n1s, edits2);  
     const p1editstr = tuples2string(p1edit);
   
-    console.log(`p1edit ${p1editstr}
-    ${p1edit.join(' ')}`);
+    // console.log(`p1edit ${p1editstr}
+    // ${p1edit.join(' ')}`);
   
     if (p1editstr !== p2str)
     {
@@ -81,7 +81,7 @@ const start = performance.now();
 
 
 
-// test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
+test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
 // test(Deno.readTextFileSync('diffdata/regex1-smaller-left.scm'), Deno.readTextFileSync('diffdata/regex1-smaller-right.scm'));
 // test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-smallest-right.scm'));
 // test(`(let ((x 1)) x)`, `(let ((y 1)) x)`);

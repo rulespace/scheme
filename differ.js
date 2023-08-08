@@ -5,6 +5,13 @@ export { nodeStream, nodeMap, diff, diff2edits, coarsifyEdits, applyEdits, tuple
 
 // TODO: quote is handled as an application
 
+// progress
+const CHOICES = 0;
+const I = 1;
+const J = 2
+const COST = 3;
+
+// edits
 const MATCH = 0;
 const MODIFY = 1;
 const LEFT = 2;
@@ -18,12 +25,17 @@ function diff2string(diff)
     switch (d)
     {
       case MATCH: l === 1 ? sb += 'M' : sb += `M(${l})`; break;
-      case MODIFY: sb += 'O'; break;
-      case LEFT: sb += 'L'; break;
-      case RIGHT: sb += 'R'; break;
+      case LEFT: l === 1 ? sb += 'L' : sb += `L(${l})`; break;
+      case RIGHT: l === 1 ? sb += 'R' : sb += `R(${l})`; break;
+      default: throw new Error(d);
     }
   }
   return sb;
+}
+
+function progressEq(d1, d2)
+{
+  return d1[COST] === d2[COST] && d1[I] === d2[I] && d1[J] === d2[J];
 }
 
 function ast2tuples(ast)
@@ -211,18 +223,49 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
 
   let minCost = 9007199254740991; // of solution
 
-  function push(choice)
+  // const node2hash1 = node2hash(n1s, n1map);
+  // const node2hash2 = node2hash(n2s, n2map);
+
+  let notAddingDup = 0;
+  function pushProgress(progress)
   {
-    const cost = choice[3];
-    if (todo.length > 0 && cost >= todo.at(-1)[3])
+    for (let yy = 0; yy < todo.length; yy++)
     {
-      todo.unshift(choice);
+      if (progressEq(todo[yy], progress))
+      {
+        notAddingDup++;
+        // console.log(`not adding duplicate progress ${progress}`);
+        return;
+      }
     }
-    else
-    {
-      todo.push(choice);
-    }
+    todo.push(progress);
   }
+
+  function unshiftProgress(progress)
+  {
+    for (let yy = 0; yy < todo.length; yy++)
+    {
+      if (progressEq(todo[yy], progress))
+      {
+        notAddingDup++;
+        // console.log(`not adding duplicate progress ${progress}`);
+        return;
+      }
+    }
+    todo.unshift(progress);
+  }
+
+  function rightProgress(choices, i, j, cost)
+  {
+    unshiftProgress([choices.concat([[RIGHT, 1]]), i, j+1, cost + 1]);
+  }
+
+  function leftProgress(choices, i, j, cost)
+  {
+    unshiftProgress([choices.concat([[LEFT, 1]]), i + 1, j, cost + 1]);
+  }
+
+  // const stmatches = [];
 
   while (todo.length > 0)
   {
@@ -233,8 +276,24 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
     //   console.log(`${leafs.length} solutions, current top ${leafs[0].join(' ')}`);  
     // }
 
+    // let same = 0; // DEBUG
+    // for (let yy = 0; yy < todo.length; yy++)
+    // {
+    //   for (let yyy = yy + 1; yyy < todo.length; yyy++)
+    //   {
+    //     if (progressEq(todo[yy], todo[yyy]))
+    //     {
+    //       same++;
+    //     }
+    //   }
+    // }
+    // console.log(`same ${same}`);
+
+    // const [choices, i, j, cost] = todo.length % 2 === 0 ? todo.pop() : todo.shift();
     const [choices, i, j, cost] = todo.pop();
     
+    // console.log(diff2string(choices)); // DEBUG
+
     if (cost >= minCost) // IMPORTANT
     {
       // console.log(`minCost ${minCost} killing ${cost}`);
@@ -243,25 +302,25 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
 
     if (i === n1s.length && j === n2s.length)
     {
-      console.log(`solution ${cost} (todo ${todo.length})`);
+      console.log(`solution ${cost} ${diff2string(choices)} (todo ${todo.length})`);
       // console.log(choices);
       leafs.push([choices, cost]);
       if (!keepSuboptimalSolutions)
       {
-        minCost = Math.min(minCost, cost); // TODO: check: actually minCost = cost (because of earlier test)
+        minCost = cost; // because of earlier test always cost < minCost
       }
       continue;
     }
 
     if (i === n1s.length)
     {
-      push([choices.concat([[RIGHT, 1]]), i, j+1, cost + 100]);
+      rightProgress(choices, i, j, cost);
       continue;
     }
     
     if (j === n2s.length)
     {
-      push([choices.concat([[LEFT, 1]]), i+1, j, cost + 100]);
+      leftProgress(choices, i, j, cost);
       continue;
     }
 
@@ -275,44 +334,35 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
 
     const left = n1s[i];
     const right = n2s[j];
-
-    const matches = subtreeMatches(left, n1map, right, n2map);
-    if (matches > 0)
+    
+    if (left[0] === right[0])
     {
-        push([choices.concat([[MATCH, matches]]), i+matches, j+matches, cost]);
-    }
-    else
-    {
-      push([choices.concat([[LEFT, 1]]), i+1, j, cost + 100]);
-      push([choices.concat([[RIGHT, 1]]), i, j+1, cost + 100]);
-
-      if (left[0] === right[0])
+      const matches = subtreeMatches(left, n1map, right, n2map);
+      if (matches > 0)
+      {
+        pushProgress([choices.concat([[MATCH, matches]]), i+matches, j+matches, cost]);
+      }
+      else
       {
         if (left[0] === '$id' || left[0] === '$lit' || left[0] === '$param')
         {
-          // if (left[2] !== right[2])
-          // {
-          //   push([choices.concat([[MODIFY, 1]]), i+1, j+1, cost + 1]);
-          // }
-          
           // no M for simple (non-compound) here (possible M from subtree matches higher up)
         }
-        else // always compound
+        else // always compound, no full match
         {
           // if (left[0] === '$let' || left[0] === '$letrec' || left[0] === '$if' || left[0] === '$lam' || left[0] === '$app')
-          {
-            push([choices.concat([[MATCH, 1]]), i+1, j+1, cost]);
-          }
+          pushProgress([choices.concat([[MATCH, 1]]), i+1, j+1, cost]);
         }  
       }
     }
+    leftProgress(choices, i, j, cost);
+    rightProgress(choices, i, j, cost);
   }
-
 
   leafs.sort((a, b) => a[1] - b[1]); // TODO: dynamically track shortest instead of post-sort
   // console.log(leafs.slice(0, 100).join('\n'));
 
-  console.log(`solutions: ${leafs.length}`);  
+  console.log(`solutions: ${leafs.length}; removed dups: ${notAddingDup}`); 
   const [topChoices, cost] = leafs[0];
   // console.log(`top choices (cost ${cost}):\n${topChoices.join('\n')}`);  
   return returnAllSolutions ? leafs.map(l => l[0]) : [topChoices];
@@ -345,44 +395,49 @@ function diff2edits(diff, n1s, n2s) // step2
     return diff[c++];
   }
 
+  function unconsumeChoice(choice)
+  {
+    return diff[--c] = choice;
+  }
+
   function modifyVal(tag, pos, val)
   {
     const edit = ['modifyVal', tag, pos, val];
-    console.log(`\t\t${edit}`);
+    // console.log(`\t\t${edit}`); DEBUG
     edits.push(edit);
   }
 
   function modifyTag(tag, pos, newTag)
   {
     const edit = ['modifyTag', tag, pos, newTag];
-    console.log(`\t\t${edit}`);
+    // console.log(`\t\t${edit}`); DEBUG
     edits.push(edit);
   }
 
   function add(el)
   {
     const edit = ['add', el]; 
-    console.log(`\t\t${edit}`);
+    // console.log(`\t\t${edit}`); DEBUG
     edits.push(edit);
   }
 
   function remove(el)
   {
     const edit = ['remove', el];
-    console.log(`\t\t${edit}`);
+    // console.log(`\t\t${edit}`); DEBUG
     edits.push(edit);
   }
 
   function genericEdit(edit)
   {
-    console.log(`\t\t${edit}`);
+    // console.log(`\t\t${edit}`); // DEBUG
     edits.push(edit);
   }
 
   while (c < diff.length)
   {
     const choice = consumeChoice();
-    console.log(`${n1s[i]} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice[0]] + (choice[1] === 1 ? '' : `(${choice[1]})`)}%c ${n2s[j]}`, 'color:blue', 'color:default');
+    // console.log(`${n1s[i]} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice[0]] + (choice[1] === 1 ? '' : `(${choice[1]})`)}%c ${n2s[j]}`, 'color:blue', 'color:default');
 
     if (choice[0] === MATCH) // with a match TYPE n1s[i] === n2s[j] always
     {
@@ -396,16 +451,16 @@ function diff2edits(diff, n1s, n2s) // step2
         const comesFromRight = (orig === 'R');
         if (comesFromRight)
         {
-          console.log(`\t${exp} ${orig} ${pos}/${len}`);
+          // console.log(`\t${exp} ${orig} ${pos}/${len}`);
           // when comeFromRight then a match means "prefer left" somewhere in a right el, so we always overwrite
-          console.log(`\t\tmatch overwrite ${exp} ${pos} ${n1s[i][TAG]}`); 
+          // console.log(`\t\tmatch overwrite ${exp} ${pos} ${n1s[i][TAG]}`); 
           exp[pos+2] = n1s[i][TAG]; // overwrite pos in current
         }
         else // comesFromLeft: with a match, this means el is already there???
         {
           const lpos = sc.at(-1)[LPOS];
           const llen = sc.at(-1)[LLEN];
-          console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
+          // console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
           // when comesFromLeft then a match means potentially rewriting a tag in an existing element, so we use modify
           // check whether a match is actually necessary
           if (exp[pos+2] !== n1s[i][TAG]) // both notEq and not in range (i.e. insertTag)??
@@ -418,7 +473,7 @@ function diff2edits(diff, n1s, n2s) // step2
             if (pos === len - 1)
             {
               const remainingArgsOnLeft = llen - lpos - 1;
-              console.log(`\tadded final argument, removing ${remainingArgsOnLeft} left args`);
+              // console.log(`\tadded final argument, removing ${remainingArgsOnLeft} left args`);
               for (let q = 0; q < remainingArgsOnLeft; q++)
               {
                 genericEdit(['removeSimple', exp[TAG], pos + 1]);
@@ -445,55 +500,12 @@ function diff2edits(diff, n1s, n2s) // step2
       i += choice[1];
       j += choice[1];
     }
-    else if (choice[0] === MODIFY) // with a modify TYPE n1s[i] === n2s[j] always; 'modify' acts like 'match' wrt. subexp pos
-    {
-      modifyVal(n1s[i][TAG], 0, n2s[j][VAL]);
-      if (sc.length > 0)
-      {
-        const exp = sc.at(-1)[EXP];
-        const orig = sc.at(-1)[ORIG];
-        const pos = sc.at(-1)[POS];
-        const len = sc.at(-1)[LEN];
-        
-        const comesFromRight = (orig === 'R');
-        if (comesFromRight)
-        {
-          console.log(`\t${exp} ${orig} ${pos}/${len}`);
-          console.log(`\t\tmodify overwrite ${exp} ${pos} ${n1s[i][TAG]}`); 
-          exp[pos+2] = n1s[i][TAG]; // overwrite pos in current
-        }
-        else // comesFromLeft
-        {
-          const lpos = sc.at(-1)[LPOS];
-          const llen = sc.at(-1)[LLEN];
-          console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
-          // when comesFromLeft then a modify means potentially rewriting a tag in an existing element, so we use modify
-          if (exp[pos+2] !== n1s[i][TAG])
-          {
-            modifyTag(exp[TAG], pos, n1s[i][TAG]); // modify pos in left (left===current when comeFromLeft)        
-          }
-
-          if (exp[TYPE] === '$app')
-          {
-            if (pos === len - 1)
-            {
-              const remainingArgsOnLeft = llen - lpos - 1;
-              console.log(`\tadded final argument, removing ${remainingArgsOnLeft} left args`);
-              for (let q = 0; q < remainingArgsOnLeft; q++)
-              {
-                genericEdit(['removeSimple', exp[TAG], pos + 1]);
-              }
-            }
-          }
-          sc.at(-1)[LPOS]++;
-        }
-        sc.at(-1)[POS]++;  
-      }
-      i++;
-      j++;      
-    }
     else if (choice[0] === LEFT) // tactic: don't push subexps (don't increase left pos, delete 'in-place)
     {
+      if (choice[1] > 1)
+      {
+        unconsumeChoice([LEFT, choice[1]-1]);
+      }
       remove(n1s[i]);
       if (sc.length > 0)
       {
@@ -505,14 +517,14 @@ function diff2edits(diff, n1s, n2s) // step2
         const comesFromRight = (orig === 'R');
         if (comesFromRight)
         {
-          console.log(`\t${exp} ${orig} ${pos}/${len}`);
+          // console.log(`\t${exp} ${orig} ${pos}/${len}`);
           // nothing    
         }
         else // comesFromLeft
         {
           const lpos = sc.at(-1)[LPOS];
           const llen = sc.at(-1)[LLEN];
-          console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
+          // console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
 
           if (sc.at(-1)[EXP][TYPE] === '$lam')
           {
@@ -529,7 +541,7 @@ function diff2edits(diff, n1s, n2s) // step2
           {
             genericEdit(['removeSimple', exp[TAG], pos]);
           }
-          else if (exp[TYPE] === '$let' || exp[TYPE] === '$if')
+          else if (exp[TYPE] === '$let' || exp[TYPE] === '$letrec' || exp[TYPE] === '$if')
           {
             // nothing
           }
@@ -551,6 +563,10 @@ function diff2edits(diff, n1s, n2s) // step2
     }
     else if (choice[0] === RIGHT)
     {
+      if (choice[1] > 1)
+      {
+        unconsumeChoice([RIGHT, choice[1]-1]);
+      }
       if (sc.length > 0)
       {
         const exp = sc.at(-1)[EXP];
@@ -561,14 +577,14 @@ function diff2edits(diff, n1s, n2s) // step2
         const comesFromRight = (orig === 'R');
         if (comesFromRight)
         {
-          console.log(`\t${exp} ${orig} ${pos}/${len}`);
+          // console.log(`\t${exp} ${orig} ${pos}/${len}`);
           sc.at(-1)[POS]++;
         }
         else // comesFromLeft
         {
           const lpos = sc.at(-1)[LPOS];
           const llen = sc.at(-1)[LLEN];
-          console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
+          // console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
 
           if (exp[TYPE] === '$lam')
           {
@@ -579,12 +595,12 @@ function diff2edits(diff, n1s, n2s) // step2
             }
             else // adding new body (could also use pos and len as for $app)
             {
-              console.log(`\tadding body`);
+              // console.log(`\tadding body`);
               modifyTag(exp[TAG], pos, n2s[j][TAG]);
               const numParamsToRemove = llen - lpos - 1; // num params remaining on left
               if (numParamsToRemove > 0)
               {
-                console.log(`\tremoving ${numParamsToRemove} params`);
+                // console.log(`\tremoving ${numParamsToRemove} params`);
                 for (let q = 0; q < numParamsToRemove; q++)
                 {
                   genericEdit(['removeSimple', exp[TAG], pos + 1]);
@@ -602,10 +618,10 @@ function diff2edits(diff, n1s, n2s) // step2
               if (pos === len - 1)
               {
                 const remainingArgsOnLeft = llen - lpos;
-                console.log(`\tadded final argument, removing ${remainingArgsOnLeft} left args`);
+                // console.log(`\tadded final argument, removing ${remainingArgsOnLeft} left args`);
                 for (let q = 0; q < remainingArgsOnLeft; q++)
                 {
-                  genericEdit(['removeSimple', exp[TAG], pos]);
+                  genericEdit(['removeSimple', exp[TAG], pos + 1]);
                 }
               }
               sc.at(-1)[POS]++;
@@ -660,8 +676,8 @@ function diff2edits(diff, n1s, n2s) // step2
       {
         if (pos === len)
         {    
-          console.log(`\t${exp} ${orig} ${pos}/${len}`)
-          console.log(`\tpopping`);
+          // console.log(`\t${exp} ${orig} ${pos}/${len}`)
+          // console.log(`\tpopping`);
           const topc = sc.pop();
           add(topc[EXP]);
         }
@@ -676,8 +692,8 @@ function diff2edits(diff, n1s, n2s) // step2
         const llen = sc.at(-1)[LLEN];
         if (pos === len)
         {
-          console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
-          console.log(`\tlr exhausted: popping`);
+          // console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
+          // console.log(`\tlr exhausted: popping`);
           sc.pop();
         }
         else
@@ -688,7 +704,7 @@ function diff2edits(diff, n1s, n2s) // step2
     }
   }
 
-  console.log(`\nedits:\n${edits.join('\n')}`);
+  // console.log(`\nedits:\n${edits.join('\n')}`); // DEBUG
   return edits;
 }
 
@@ -740,7 +756,7 @@ function coarsifyEdits(edits, n1s) // step 3: turn modify etc. into add/remove
     }
   }
 
-  console.log(`\nedits2:\n${edits2.join('\n')}`);
+  // console.log(`\nedits2:\n${edits2.join('\n')}`);  // DEBUG
   return edits2;
 }
 
@@ -751,10 +767,164 @@ function nodeStream(src, parser)
   return ns;
 }
 
+const R = 31;
+const M = 127;
+function hash2node(ns, nmap)
+{
+  const table = {
+    '$id': [],
+    '$lit': [],
+    '$param': [],
+    '$let': [],
+    '$if': [],
+    '$lam': [],
+    '$app': []
+  };
+
+  function hashName(s)
+  {
+    let h = 0;
+    for (let i = 0; i < s.length; i++)
+    {
+      h = (R * h + s.charCodeAt(i)) % M;
+    }
+    return h;
+  }
+
+  function doHash(n)
+  {
+    if (n[0] === '$id' || n[0] === '$param')
+    {
+      return hashName(n[2]);
+    }
+    else if (n[0] === '$lit')
+    {
+      if (typeof n[2] === 'string')
+      {
+        return hashName(n[2]);
+      }
+      else if (typeof n[2] === 'number')
+      {
+        return n[2] % M;
+      }
+      else if (n[2] === true)
+      {
+        return 1;
+      }
+      else if (n[2] === false)
+      {
+        return 0;
+      }
+      else
+      {
+        throw new Error();
+      }
+    }
+    else
+    {
+      let h = 0;
+      for (let i = 2; i < n.length; i++)
+      {
+        h = (R * h + hash(nmap[n[i]])) % M;
+      }
+      return h;
+    }
+  }
+
+  function hash(n)
+  {
+    const h = doHash(n);
+
+    let b = table[n[0]][h];
+    if (b === undefined)
+    {
+      b = [];
+      table[n[0]][h] = b;
+    }
+    b.push(n);
+    return h;
+  }
+
+  hash(ns[0]);
+  return table;
+}
+
+function node2hash(ns, nmap)
+{
+  const table = [];
+
+  function hashName(s)
+  {
+    let h = 0;
+    for (let i = 0; i < s.length; i++)
+    {
+      h = (R * h + s.charCodeAt(i)) % M;
+    }
+    return h;
+  }
+
+  function doHash(n)
+  {
+    if (n[0] === '$id' || n[0] === '$param')
+    {
+      return hashName(n[2]);
+    }
+    else if (n[0] === '$lit')
+    {
+      if (typeof n[2] === 'string')
+      {
+        return hashName(n[2]);
+      }
+      else if (typeof n[2] === 'number')
+      {
+        return n[2] % M;
+      }
+      else if (n[2] === true)
+      {
+        return 127;
+      }
+      else if (n[2] === false)
+      {
+        return 113;
+      }
+      else if (n[2] instanceof Null)
+      {
+        return 109;
+      }
+      else
+      {
+        throw new Error();
+      }
+    }
+    else
+    {
+      let h = 0;
+      for (let i = 2; i < n.length; i++)
+      {
+        h = (R * h + hash(nmap[n[i]])) % M;
+      }
+      return h;
+    }
+  }
+
+  function hash(n)
+  {
+    const h = doHash(n);
+    table[n[1]] = h;
+    return h;
+  }
+
+  hash(ns[0]);
+  return table;
+}
+
 function diff(n1s, n2s, options)
 {
   const n1map = nodeMap(n1s);
   const n2map = nodeMap(n2s);
+
+  // const hash2node1 = hash2node(n1s, n1map);
+  // const hash2node2 = hash2node(n2s, n2map);
 
   const returnAllSolutions = options?.returnAllSolutions;
   const keepSuboptimalSolutions = options?.keepSuboptimalSolutions;
@@ -857,3 +1027,90 @@ function tuples2string(tuples)
 }
 
 
+
+// ***
+// push/unsh according to cost
+  // function push(choice)
+  // {
+  //   const cost = choice[3];
+  //   if (todo.length > 0 && cost >= todo.at(-1)[3])
+  //   {
+  //     todo.unshift(choice);
+  //   }
+  //   else
+  //   {
+  //     todo.push(choice);
+  //   }
+  // }
+
+  // push/unsh according to lr advancement
+  // function push(choice)
+  // {
+  //   if (todo.length > 0 && ((choice[1] + choice[2]) < (todo.at(-1)[1] + todo.at(-1)[2])))
+  //   {
+  //     todo.unshift(choice);
+  //   }
+  //   else
+  //   {
+  //     todo.push(choice);
+  //   }
+  // }
+
+  // push/unsh according to l advancement
+  // function push(choice)
+  // {
+  //   if (todo.length > 0 && choice[1] < todo.at(-1)[1])
+  //   {
+  //     todo.unshift(choice);
+  //   }
+  //   else
+  //   {
+  //     todo.push(choice);
+  //   }
+  // }
+
+  // *** memoizing subtreeMatch
+
+    // let matches;
+    // const m = stmatches[left[1]];
+    // if (m === undefined)
+    // {
+    //   matches = subtreeMatches(left, n1map, right, n2map);
+    //   stmatches[left[1]] = [[right[1], matches]];
+    //   // console.log(`1) ${left[1]} ${right[1]} ${matches}`);
+    // }
+    // else
+    // {
+    //   for (const [r, mm] of m)
+    //   {
+    //     if (right[1] === r)
+    //     {
+    //       matches = mm;
+    //       break;
+    //     }
+    //   }
+    //   if (matches === undefined)
+    //   {
+    //     matches = subtreeMatches(left, n1map, right, n2map);
+    //     stmatches[left[1]].push([right[1], matches]);
+    //     // console.log(`2) ${left[1]} ${right[1]} ${matches}`);
+    //   }
+    // }
+
+
+    // *** accumulating push
+    // function pushRightProgress(choices, i, j, cost)
+    // {
+    //   // const prevChoice = choices.at(-1);
+    //   // if (prevChoice !== undefined && prevChoice[0] === RIGHT)
+    //   // {
+    //   //   const newChoices = choices.slice(0, -1);
+    //   //   newChoices.push([RIGHT, prevChoice[1] + 1]);
+    //   //   pushProgress([newChoices, i, j + 1, cost + 99]);
+    //   // }
+    //   // else
+    //   {
+    //     pushProgress([choices.concat([[RIGHT, 1]]), i, j+1, cost + 100]);
+    //   }
+    // }
+  
