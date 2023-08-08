@@ -1,15 +1,15 @@
 import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
-import { ast2tuples, diff, diff2edits, coarsifyEdits, nodeMap, diff2string } from '../differ.js';
+import { nodeStream, diff, diff2edits, coarsifyEdits, applyEdits, tuples2string, diff2string } from '../differ.js';
 
 function doDiff(src1, src2)
 {
   const parser = new SchemeParser();
 
   const n1s = nodeStream(src1, parser);
-  const p1str = tuplesToString(n1s);
+  const p1str = tuples2string(n1s);
 
   const n2s = nodeStream(src2, parser);
-  const p2str = tuplesToString(n2s);
+  const p2str = tuples2string(n2s);
 
   console.log(`p1     ${p1str}
   ${n1s.join(' ')}`);
@@ -25,7 +25,7 @@ function doDiff(src1, src2)
     const edits2 = coarsifyEdits(edits, n1s);
 
     const p1edit = applyEdits(n1s, edits2);  
-    const p1editstr = tuplesToString(p1edit);
+    const p1editstr = tuples2string(p1edit);
   
     console.log(`p1edit ${p1editstr}
     ${p1edit.join(' ')}`);
@@ -56,7 +56,7 @@ function testEq(src)
 
 const start = performance.now();
 
-test(`(if a b c)`, `(if (let ((x (- 1 1))) (* a x)) (let ((y (+ 2 22))) (+ b y)) (let ((z (/ 3 33))) (- c z)))`);
+// test(`(if a b c)`, `(if (let ((x (- 1 1))) (* a x)) (let ((y (+ 2 22))) (+ b y)) (let ((z (/ 3 33))) (- c z)))`);
 
 // test(`(if x
 //             'neg
@@ -87,3 +87,9 @@ test(`(if a b c)`, `(if (let ((x (- 1 1))) (* a x)) (let ((y (+ 2 22))) (+ b y))
 // test(`(let ((x 1)) x)`, `(let ((y 1)) x)`);
 
 // deno test --allow-read diff.test.js
+
+//  deno run --v8-flags=--trace-ic --allow-read diff.test.js // v8 flag not supported by Deno
+
+//  deno run --v8-flags=--prof --allow-read diff.test.js
+// node --prof-process isolate- > prof.log
+
