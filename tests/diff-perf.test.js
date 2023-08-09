@@ -58,33 +58,28 @@ const start = performance.now();
 
 // test(`(if a b c)`, `(if (let ((x (- 1 1))) (* a x)) (let ((y (+ 2 22))) (+ b y)) (let ((z (/ 3 33))) (- c z)))`);
 
-// test(`(if x
-//             'neg
-//             (let ((fac (lambda (n) 
-//             (let ((t (= n 0))) 
-//               (if t 
-//                   1 
-//                   (let ((u (- n 1))) 
-//                     (let ((v (fac u))) 
-//                       (* n v)))))))) 
-// (fac 8)))`,  
-//      `(if x
-//           (let ((fac (lambda (n) 
-//           (let ((t (= n 0))) 
-//             (if t 
-//                 1 
-//                 (let ((u (- n 1))) 
-//                   (let ((v (fac u))) 
-//                     (* n v)))))))) 
-// (fac 8))
-//             'neg)`);   // switch branches: shift FAST pop SLOW
 
-
-
-test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
-// test(Deno.readTextFileSync('diffdata/regex1-smaller-left.scm'), Deno.readTextFileSync('diffdata/regex1-smaller-right.scm'));
 // test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-smallest-right.scm'));
-// test(`(let ((x 1)) x)`, `(let ((y 1)) x)`);
+// test(Deno.readTextFileSync('diffdata/regex1-smaller-left.scm'), Deno.readTextFileSync('diffdata/regex1-smaller-right.scm'));
+// test(Deno.readTextFileSync('diffdata/regex1-smallest-right.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
+
+// test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
+// test(Deno.readTextFileSync('diffdata/if1-left.scm'), Deno.readTextFileSync('diffdata/if1-right.scm'));
+
+// test(Deno.readTextFileSync('diffdata/churchnums-left.scm'), Deno.readTextFileSync('diffdata/churchnums-right.scm'));
+
+
+
+
+// completely different files
+test(Deno.readTextFileSync('diffdata/churchnums-left.scm'), Deno.readTextFileSync('diffdata/factor-left.scm')); // plagued by quotes
+
+
+
+// PROBLEMATIC at least due to technical (non-perf) reasons:
+// test(Deno.readTextFileSync('diffdata/boyer1-left.scm'), Deno.readTextFileSync('diffdata/boyer1-right.scm')); // plagued by quotes
+// test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/churchnums-right.scm')); // lam as arg
+
 
 // deno test --allow-read diff.test.js
 

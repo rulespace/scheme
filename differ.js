@@ -5,6 +5,17 @@ export { nodeStream, nodeMap, diff, diff2edits, coarsifyEdits, applyEdits, tuple
 
 // TODO: quote is handled as an application
 
+// ast
+const $lit = 0;
+const $id = 1;
+const $param = 2;
+const $let = 3;
+const $letrec = 4;
+const $if = 5;
+const $set = 6;
+const $lam = 7;
+const $app = 8;
+
 // progress
 const CHOICES = 0;
 const I = 1;
@@ -42,23 +53,23 @@ function ast2tuples(ast)
 {
   if (ast instanceof String)
   {
-    return [['$lit', ast.tag, ast.toString()]];
+    return [[$lit, ast.tag, ast.toString()]];
   }
   if (ast instanceof Number)
   {
-    return [['$lit', ast.tag, ast.valueOf()]];
+    return [[$lit, ast.tag, ast.valueOf()]];
   }
   if (ast instanceof Boolean)
   {
-    return [['$lit', ast.tag, ast.valueOf()]];
+    return [[$lit, ast.tag, ast.valueOf()]];
   }
   if (ast instanceof Null)
   {
-    return [['$lit', ast.tag, new Null().valueOf()]]; // TODO: improve
+    return [[$lit, ast.tag, new Null().valueOf()]]; // TODO: improve
   }
   if (ast instanceof Sym)
   {
-    return [['$id', ast.tag, ast.toString()]];
+    return [[$id, ast.tag, ast.toString()]];
   }
   if (ast instanceof Pair)
   {
@@ -70,10 +81,10 @@ function ast2tuples(ast)
         case "lambda":
         {
           const params = ast.cdr.car;
-          const paramTuples = [...params].map(sym => ['$param', sym.tag, sym.toString()]);
+          const paramTuples = [...params].map(sym => [$param, sym.tag, sym.toString()]);
           const body = ast.cdr.cdr.car; // only one body exp allowed (here, and elsewhere)
           const bodyTuples = ast2tuples(body);
-          return [['$lam', ast.tag, ...[...params].map(t => t.tag), body.tag], ...paramTuples, ...bodyTuples];
+          return [[$lam, ast.tag, ...[...params].map(t => t.tag), body.tag], ...paramTuples, ...bodyTuples];
         }
         case "let":
         {
@@ -84,7 +95,7 @@ function ast2tuples(ast)
           const nameTuples = ast2tuples(name);
           const initTuples = ast2tuples(init);
           const bodyTuples = ast2tuples(body);
-          return [['$let', ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
+          return [[$let, ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
         }
         case "letrec":
         {
@@ -95,7 +106,7 @@ function ast2tuples(ast)
           const nameTuples = ast2tuples(name);
           const initTuples = ast2tuples(init);
           const bodyTuples = ast2tuples(body);
-          return [['$letrec', ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
+          return [[$letrec, ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
         }
         case "if":
         {
@@ -105,7 +116,7 @@ function ast2tuples(ast)
           const condTuples = ast2tuples(cond);
           const consTuples = ast2tuples(cons);
           const altTuples = ast2tuples(alt);
-          return [['$if', ast.tag, cond.tag, cons.tag, alt.tag], ...condTuples, ...consTuples, ...altTuples];
+          return [[$if, ast.tag, cond.tag, cons.tag, alt.tag], ...condTuples, ...consTuples, ...altTuples];
         }
         // case "cons":
         // {
@@ -133,7 +144,7 @@ function ast2tuples(ast)
           const update = ast.cdr.cdr.car;
           const nameTuples = ast2tuples(name);
           const updateTuples = ast2tuples(update);
-          return [['$set', ast.tag, name.tag, update.tag], ...nameTuples,  ...updateTuples];         
+          return [[$set, ast.tag, name.tag, update.tag], ...nameTuples,  ...updateTuples];         
         }
         // case "set-car!":
         // {
@@ -156,7 +167,7 @@ function ast2tuples(ast)
         {
           const ratorTuples = ast2tuples(car);
           const argTuples = [...ast.cdr].map(ast2tuples);
-          return [['$app', ast.tag, car.tag, ...[...ast.cdr].map(t => t.tag)], ...ratorTuples, ...argTuples.flat()];
+          return [[$app, ast.tag, car.tag, ...[...ast.cdr].map(t => t.tag)], ...ratorTuples, ...argTuples.flat()];
         }
       }
     }
@@ -164,7 +175,7 @@ function ast2tuples(ast)
     { // TODO: cloned from default (`app`) case above
       const ratorTuples = ast2tuples(car);
       const argTuples = [...ast.cdr].map(ast2tuples);
-      return [['$app', ast.tag, car.tag, ...[...ast.cdr].map(t => t.tag)], ...ratorTuples, ...argTuples.flat()];
+      return [[$app, ast.tag, car.tag, ...[...ast.cdr].map(t => t.tag)], ...ratorTuples, ...argTuples.flat()];
     }
   }
   throw new Error(`cannot handle expression ${ast} of type ${ast?.constructor?.name}`);
@@ -174,7 +185,7 @@ function ast2tuples(ast)
 
 function subtreeMatches(t1, n1map, t2, n2map)
 {
-  if (((t1[0] === '$id' || t1[0] === '$param' || t1[0] === '$lit')) && t1[0] === t2[0])
+  if (((t1[0] < 3)) && t1[0] === t2[0])
   {
     if (t1[2] === t2[2])
     {
@@ -344,13 +355,13 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
       }
       else
       {
-        if (left[0] === '$id' || left[0] === '$lit' || left[0] === '$param')
+        if (left[0] < 3)
         {
           // no M for simple (non-compound) here (possible M from subtree matches higher up)
         }
         else // always compound, no full match
         {
-          // if (left[0] === '$let' || left[0] === '$letrec' || left[0] === '$if' || left[0] === '$lam' || left[0] === '$app')
+          // if (left[0] === '$let' || left[0] === '$letrec' || left[0] === '$if' || left[0] === '$lam' || left[0] === '$app') || ...
           pushProgress([choices.concat([[MATCH, 1]]), i+1, j+1, cost]);
         }  
       }
@@ -468,7 +479,7 @@ function diff2edits(diff, n1s, n2s) // step2
             modifyTag(exp[TAG], pos, n1s[i][TAG]); // modify pos in left (left===current when comeFromLeft)
           }
 
-          if (exp[TYPE] === '$app')
+          if (exp[TYPE] === $app)
           {
             if (pos === len - 1)
             {
@@ -485,7 +496,7 @@ function diff2edits(diff, n1s, n2s) // step2
         sc.at(-1)[POS]++;
       }
       
-      if (n1s[i][TYPE] === '$id' || n1s[i][TYPE] === '$lit' || n1s[i][TYPE] === '$param')
+      if (n1s[i][TYPE] < 3)
       {
         // nothing
       }
@@ -526,9 +537,9 @@ function diff2edits(diff, n1s, n2s) // step2
           const llen = sc.at(-1)[LLEN];
           // console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
 
-          if (sc.at(-1)[EXP][TYPE] === '$lam')
+          if (sc.at(-1)[EXP][TYPE] === $lam)
           {
-            if (n1s[i][TYPE] === '$param')
+            if (n1s[i][TYPE] === $param)
             {
               genericEdit(['removeSimple', exp[TAG], pos]);
             }
@@ -537,11 +548,11 @@ function diff2edits(diff, n1s, n2s) // step2
               // nothing
             }
           }
-          else if (exp[TYPE] === '$app')
+          else if (exp[TYPE] === $app)
           {
             genericEdit(['removeSimple', exp[TAG], pos]);
           }
-          else if (exp[TYPE] === '$let' || exp[TYPE] === '$letrec' || exp[TYPE] === '$if')
+          else if (exp[TYPE] === $let || exp[TYPE] === $letrec || exp[TYPE] === $if || exp[TYPE] === $set)
           {
             // nothing
           }
@@ -586,9 +597,9 @@ function diff2edits(diff, n1s, n2s) // step2
           const llen = sc.at(-1)[LLEN];
           // console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
 
-          if (exp[TYPE] === '$lam')
+          if (exp[TYPE] === $lam)
           {
-            if (n2s[j][TYPE] === '$param')
+            if (n2s[j][TYPE] === $param)
             {
               genericEdit(['insertSimple', exp[TAG], pos, n2s[j][TAG]]);
               sc.at(-1)[POS]++;
@@ -610,9 +621,9 @@ function diff2edits(diff, n1s, n2s) // step2
               sc.at(-1)[POS]++;
             }
           }
-          else if (exp[TYPE] === '$app')
+          else if (exp[TYPE] === $app)
           {
-            if (n2s[j][TYPE] === '$id' || n2s[j][TYPE] === '$lit')
+            if (n2s[j][TYPE] === $id || n2s[j][TYPE] === $lit)
             {
               genericEdit(['insertSimple', exp[TAG], pos, n2s[j][TAG]]);
               if (pos === len - 1)
@@ -628,10 +639,10 @@ function diff2edits(diff, n1s, n2s) // step2
             }
             else
             {
-              throw new Error(`unexpected argument expression type ${n2s[j]}`);
+              throw new Error(`unexpected argument expression type ${n2s[j]}: ${tuple2string(n2s[j], n2s)})`);
             }
           }
-          else if (exp[TYPE] === '$let' || exp[TYPE] === '$if')
+          else if (exp[TYPE] === $let || exp[TYPE] === $letrec || exp[TYPE] === $if || exp[TYPE] === $set)
           {
             modifyTag(exp[TAG], pos, n2s[j][TAG]);
             sc.at(-1)[POS]++;
@@ -647,7 +658,7 @@ function diff2edits(diff, n1s, n2s) // step2
         // nothing
       }
 
-      if (n2s[j][TYPE] === '$id' || n2s[j][TYPE] === '$lit' || n2s[j][TYPE] === '$param')
+      if (n2s[j][TYPE] < 3)
       {
         add(n2s[j]);
       }
@@ -771,15 +782,7 @@ const R = 31;
 const M = 127;
 function hash2node(ns, nmap)
 {
-  const table = {
-    '$id': [],
-    '$lit': [],
-    '$param': [],
-    '$let': [],
-    '$if': [],
-    '$lam': [],
-    '$app': []
-  };
+  const table = [[], [] ,[], [], [], [], [], [], []]; // bucket per ast type 
 
   function hashName(s)
   {
@@ -865,11 +868,11 @@ function node2hash(ns, nmap)
 
   function doHash(n)
   {
-    if (n[0] === '$id' || n[0] === '$param')
+    if (n[0] === $id || n[0] === $param)
     {
       return hashName(n[2]);
     }
-    else if (n[0] === '$lit')
+    else if (n[0] === $lit)
     {
       if (typeof n[2] === 'string')
       {
@@ -984,46 +987,55 @@ function applyEdits(ts, edits)
   return m.filter(x => x);
 }
 
-function tuples2string(tuples)
-{
 
-  const m = nodeMap(tuples);
+function tuple2string(tuple, tuples)
+{
 
   function stringify(t)
   {
-    switch (t[0])
-    {
-      case '$lit':
-      case '$id':
-      case '$param':
-        {
-          return t[2];
-        }
-      case '$let':
-        {
-          return `(let ((${stringify(m[t[2]])} ${stringify(m[t[3]])})) ${stringify(m[t[4]])})`;
-        }
-      case '$letrec':
-        {
-          return `(letrec ((${stringify(m[t[2]])} ${stringify(m[t[3]])})) ${stringify(m[t[4]])})`;
-        }
-      case '$if':
-        {
-          return `(if ${stringify(m[t[2]])} ${stringify(m[t[3]])} ${stringify(m[t[4]])})`;
-        }
-      case '$lam':
+      switch (t[0])
+      {
+        case $lit:
+        case $id:
+        case $param:
+          {
+            return t[2];
+          }
+        case $let:
+          {
+            return `(let ((${stringify(m[t[2]])} ${stringify(m[t[3]])})) ${stringify(m[t[4]])})`;
+          }
+        case $letrec:
+          {
+            return `(letrec ((${stringify(m[t[2]])} ${stringify(m[t[3]])})) ${stringify(m[t[4]])})`;
+          }
+        case $if:
+          {
+            return `(if ${stringify(m[t[2]])} ${stringify(m[t[3]])} ${stringify(m[t[4]])})`;
+          }
+        case $set:
+          {
+            return `(set! ${stringify(m[t[2]])} ${stringify(m[t[3]])})`;
+          }
+        case $lam:
         {
           return `(lambda (${t.slice(2, -1).map(x => stringify(m[x])).join(' ')}) ${stringify(m[t.at(-1)])})`;
         }
-      case '$app':
-        {
-          return `(${stringify(m[t[2]])} ${t.slice(3).map(x => stringify(m[x])).join(' ')})`;
-        }
-      default: throw new Error(`cannot handle ${t}`);
+        case $app:
+          {
+            return `(${stringify(m[t[2]])} ${t.slice(3).map(x => stringify(m[x])).join(' ')})`;
+          }
+        default: throw new Error(`cannot handle ${t}`);
+      }
     }
-  }
+  
+  const m = nodeMap(tuples);
+  return stringify(tuple, m);
+}
 
-  return stringify(tuples[0]);
+function tuples2string(tuples)
+{
+  return tuple2string(tuples[0], tuples);
 }
 
 

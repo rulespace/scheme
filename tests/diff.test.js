@@ -100,6 +100,12 @@ test(`(if a b c)`, `(if a c b)`);
 test(`(if a b c)`, `(if a (+ x y) (+ r s))`);
 test(`(if x neg (let ((fac x)) 8))`, `(if x (let ((fac x)) 8) neg)`); // interesting: M(4)
 
+test(`(set! a b)`, `(set! a c)`);
+test(`(set! a b)`, `(set! x b)`);
+test(`(set! a b)`, `(set! x y)`);
+test(`(set! a b)`, `(set! b a)`);
+test(`(set! a b)`, `(set! b c)`);
+
 test(`(foo f g h)`, `(bar f g h)`);
 test(`(foo f g h)`, `(foo x g h)`);
 test(`(foo f g h)`, `(bar x y z)`);
