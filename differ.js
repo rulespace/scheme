@@ -49,6 +49,7 @@ function progressEq(d1, d2)
   return d1[COST] === d2[COST] && d1[I] === d2[I] && d1[J] === d2[J];
 }
 
+
 function ast2tuples(ast)
 {
   if (ast instanceof String)
@@ -232,38 +233,66 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
   const leafs = [];
   const todo = [initial];
 
-  let minCost = 9007199254740991; // of solution
+  let globalSuboptimal = 0;
+  let globalMinCost = 9007199254740991;
+
+  const minCost = [];
+  function isProgress(progress)
+  {
+    const [choices, i, j, cost] = progress;
+    const jbucket = minCost[i];
+    if (jbucket === undefined)
+    {
+      const jb = [];
+      jb[j] = cost;
+      minCost[i] = jb;
+      return true;
+    }
+    else
+    {
+      if (jbucket[j] === undefined)
+      {
+        jbucket[j] = cost;
+        return true;
+      }
+      return cost < jbucket[j];
+    }
+  }
+
+  // function progressSuboptimal(existing, proposed)
+  // {
+  //   return existing[I] === proposed[I] && existing[J] === proposed[J] && existing[COST] <= proposed[COST];
+  // }
+
 
   // const node2hash1 = node2hash(n1s, n1map);
   // const node2hash2 = node2hash(n2s, n2map);
 
-  let notAddingDup = 0;
+  let localSuboptimal = 0;
   function pushProgress(progress)
   {
-    for (let yy = 0; yy < todo.length; yy++)
+    if (isProgress(progress))
     {
-      if (progressEq(todo[yy], progress))
-      {
-        notAddingDup++;
-        // console.log(`not adding duplicate progress ${progress}`);
-        return;
-      }
+      todo.push(progress);
     }
-    todo.push(progress);
+    else
+    {
+      localSuboptimal++;
+      // console.log(`not adding duplicate progress ${progress}`);
+    }
   }
 
   function unshiftProgress(progress)
   {
-    for (let yy = 0; yy < todo.length; yy++)
+    if (isProgress(progress))
     {
-      if (progressEq(todo[yy], progress))
-      {
-        notAddingDup++;
-        // console.log(`not adding duplicate progress ${progress}`);
-        return;
-      }
+      todo.unshift(progress);
     }
-    todo.unshift(progress);
+    else
+    {
+      localSuboptimal++;
+      // console.log(`not adding duplicate progress ${progress}`);
+    }
   }
 
   function rightProgress(choices, i, j, cost)
@@ -305,9 +334,10 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
     
     // console.log(diff2string(choices)); // DEBUG
 
-    if (cost >= minCost) // IMPORTANT
+    if (cost >= globalMinCost)
     {
-      // console.log(`minCost ${minCost} killing ${cost}`);
+      // console.log(`minCost ${globalMinCost} killing ${cost}`);
+      globalSuboptimal++;
       continue;
     }
 
@@ -318,7 +348,7 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
       leafs.push([choices, cost]);
       if (!keepSuboptimalSolutions)
       {
-        minCost = cost; // because of earlier test always cost < minCost
+        globalMinCost = cost; // because of earlier test always cost < minCost
       }
       continue;
     }
@@ -373,7 +403,7 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
   leafs.sort((a, b) => a[1] - b[1]); // TODO: dynamically track shortest instead of post-sort
   // console.log(leafs.slice(0, 100).join('\n'));
 
-  console.log(`solutions: ${leafs.length}; removed dups: ${notAddingDup}`); 
+  console.log(`solutions: ${leafs.length}; localSuboptimal: ${localSuboptimal} globalSuboptimal: ${globalSuboptimal}`); 
   const [topChoices, cost] = leafs[0];
   // console.log(`top choices (cost ${cost}):\n${topChoices.join('\n')}`);  
   return returnAllSolutions ? leafs.map(l => l[0]) : [topChoices];
