@@ -1,7 +1,7 @@
 import { assertTrue } from './deps.ts';
 import { Null, Pair, SchemeParser, Sym } from './sexp-reader.js';
 
-export { nodeStream, nodeMap, diff, diff2edits, coarsifyEdits, applyEdits, tuples2string, diff2string };
+export { nodeStream, nodeMap, diff, diff2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, diff2string };
 
 // TODO: quote is handled as an application
 
@@ -181,7 +181,6 @@ function ast2tuples(ast)
   }
   throw new Error(`cannot handle expression ${ast} of type ${ast?.constructor?.name}`);
 }
-
 
 
 function subtreeMatches(t1, n1map, t2, n2map)
@@ -409,16 +408,18 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
   return returnAllSolutions ? leafs.map(l => l[0]) : [topChoices];
 }
 
+
 function diff2edits(diff, n1s, n2s) // step2
 {
+  //stack
   const EXP = 0;
-  const ORIG = 1;
-  const POS = 2;
-  const LEN = 3;
+  const RPOS = 1;
+  const RLEN = 2;
+  const WPOS = 3;
+  const WLEN = 4;
+  const ORIG = 5;
 
-  const LPOS = 4;
-  const LLEN = 5;
-
+  // ast (TODO: move to top-level)
   const TYPE = 0;
   const TAG = 1;
   const VAL = 2; // $lit $id
@@ -428,7 +429,6 @@ function diff2edits(diff, n1s, n2s) // step2
   let j = 0;
 
   const sc = [];
-
   const edits = [];
 
   function consumeChoice()
@@ -436,17 +436,12 @@ function diff2edits(diff, n1s, n2s) // step2
     return diff[c++];
   }
 
-  function unconsumeChoice(choice)
-  {
-    return diff[--c] = choice;
-  }
-
-  function modifyVal(tag, pos, val)
-  {
-    const edit = ['modifyVal', tag, pos, val];
-    // console.log(`\t\t${edit}`); DEBUG
-    edits.push(edit);
-  }
+  // function modifyVal(tag, pos, val)
+  // {
+  //   const edit = ['modifyVal', tag, pos, val];
+  //   // console.log(`\t\t${edit}`); DEBUG
+  //   edits.push(edit);
+  // }
 
   function modifyTag(tag, pos, newTag)
   {
@@ -458,75 +453,96 @@ function diff2edits(diff, n1s, n2s) // step2
   function add(el)
   {
     const edit = ['add', el]; 
-    // console.log(`\t\t${edit}`); DEBUG
+    console.log(`\t\t${edit}`); // DEBUG
     edits.push(edit);
   }
 
   function remove(el)
   {
     const edit = ['remove', el];
-    // console.log(`\t\t${edit}`); DEBUG
-    edits.push(edit);
+    console.log(`\t\t${edit}`); // DEBUG
+    edits.push(edit); 
   }
 
   function genericEdit(edit)
   {
-    // console.log(`\t\t${edit}`); // DEBUG
+    console.log(`\t\t${edit}`); // DEBUG
     edits.push(edit);
+  }
+
+  function frame2string(frame)
+  {
+    return `${tuple2shortString(frame[EXP])} R ${frame[RPOS]}/${frame[RLEN]} W ${frame[WPOS]}/${frame[WLEN]} |${frame[ORIG]}|`;
+  }
+
+  function stack2string(stack)
+  {
+    return stack.map(frame2string).toReversed().join(" ");
+  }
+
+  function findMatchPos()
+  {
+    for (let s = sc.length - 2; s >= 0; s--)
+    {
+      // console.log(`\t\tinspecting ${s}/${sc.length - 1}`); // DEBUG
+      // const pos = sc.at(s)[POS];
+      // const len = sc.at(s)[LEN];
+      // if (pos < len)
+      {
+        const orig = sc.at(s)[ORIG];
+        if (orig === 'M')
+        {
+          // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
+          return s;
+        }
+      }
+    }
+    return false; // no higher-up match
   }
 
   while (c < diff.length)
   {
     const choice = consumeChoice();
-    // console.log(`${n1s[i]} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice[0]] + (choice[1] === 1 ? '' : `(${choice[1]})`)}%c ${n2s[j]}`, 'color:blue', 'color:default');
+    console.log(`\n${n1s[i] && tuple2shortString(n1s[i])} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice[0]] + (choice[1] === 1 ? '' : `(${choice[1]})`)}%c ${n2s[j] && tuple2shortString(n2s[j])}`, 'color:blue', 'color:default');
+    console.log(`\tstack ${stack2string(sc)}`);
 
     if (choice[0] === MATCH) // with a match TYPE n1s[i] === n2s[j] always
     {
       if (sc.length > 0)
       {
         const exp = sc.at(-1)[EXP];
+        const pos = sc.at(-1)[WPOS];
         const orig = sc.at(-1)[ORIG];
-        const pos = sc.at(-1)[POS];
-        const len = sc.at(-1)[LEN];
         
-        const comesFromRight = (orig === 'R');
-        if (comesFromRight)
+        if (orig === 'M')
         {
-          // console.log(`\t${exp} ${orig} ${pos}/${len}`);
-          // when comeFromRight then a match means "prefer left" somewhere in a right el, so we always overwrite
-          // console.log(`\t\tmatch overwrite ${exp} ${pos} ${n1s[i][TAG]}`); 
-          exp[pos+2] = n1s[i][TAG]; // overwrite pos in current
+          sc.at(-1)[WPOS]++;
+          sc.at(-1)[RPOS]++;
         }
-        else // comesFromLeft: with a match, this means el is already there???
+        else if (orig === 'R')
         {
-          const lpos = sc.at(-1)[LPOS];
-          const llen = sc.at(-1)[LLEN];
-          // console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
-          // when comesFromLeft then a match means potentially rewriting a tag in an existing element, so we use modify
-          // check whether a match is actually necessary
-          if (exp[pos+2] !== n1s[i][TAG]) // both notEq and not in range (i.e. insertTag)??
+          console.log(`\t\toverwrite ${tuple2shortString(exp)} ${pos} ${n1s[i][TAG]}`); 
+          exp[pos+2] = n1s[i][TAG]; // overwrite
+          const matchPos = findMatchPos();
+          if (matchPos !== false)
           {
-            modifyTag(exp[TAG], pos, n1s[i][TAG]); // modify pos in left (left===current when comeFromLeft)
+            genericEdit(['removeSimple', sc.at(matchPos)[EXP][TAG], sc.at(matchPos)[WPOS]]); // remove attr
           }
-
-          if (exp[TYPE] === $app)
-          {
-            if (pos === len - 1)
-            {
-              const remainingArgsOnLeft = llen - lpos - 1;
-              // console.log(`\tadded final argument, removing ${remainingArgsOnLeft} left args`);
-              for (let q = 0; q < remainingArgsOnLeft; q++)
-              {
-                genericEdit(['removeSimple', exp[TAG], pos + 1]);
-              }
-            }
-          }
-          sc.at(-1)[LPOS]++;
+          sc.at(-1)[WPOS]++;
         }
-        sc.at(-1)[POS]++;
+        else if (orig === 'L')
+        {
+          const matchPos = findMatchPos();
+          if (matchPos !== false)
+          {
+            genericEdit(['insertSimple', sc.at(matchPos)[EXP][TAG], sc.at(matchPos)[WPOS], n1s[i][TAG]]); // insert attr
+            sc.at(matchPos)[WPOS]++;
+          }
+          sc.at(-1)[RPOS]++;
+        }
       }
       
-      if (n1s[i][TYPE] < 3)
+      if (n1s[i][TYPE] < 3) // if not compound exp
       {
         // nothing
       }
@@ -536,156 +552,78 @@ function diff2edits(diff, n1s, n2s) // step2
       }
       else
       {
-        sc.push([n1s[i], 'L', 0, n2s[j].length-2, 0, n1s[i].length-2]); // not mutated when comesFromLeft
+        sc.push([n1s[i], 0, n1s[i].length - 2, 0, n2s[j].length - 2, 'M']); 
       }
       i += choice[1];
       j += choice[1];
     }
-    else if (choice[0] === LEFT) // tactic: don't push subexps (don't increase left pos, delete 'in-place)
+    else if (choice[0] === LEFT)
     {
-      if (choice[1] > 1)
-      {
-        unconsumeChoice([LEFT, choice[1]-1]);
-      }
       remove(n1s[i]);
       if (sc.length > 0)
       {
         const exp = sc.at(-1)[EXP];
+        const pos = sc.at(-1)[WPOS];
         const orig = sc.at(-1)[ORIG];
-        const pos = sc.at(-1)[POS];
-        const len = sc.at(-1)[LEN];
         
-        const comesFromRight = (orig === 'R');
-        if (comesFromRight)
+        if (orig === 'M')
         {
-          // console.log(`\t${exp} ${orig} ${pos}/${len}`);
-          // nothing    
+          genericEdit(['removeSimple', exp[TAG], pos]);
+          sc.at(-1)[RPOS]++;
         }
-        else // comesFromLeft
+        else if (orig === 'L')
         {
-          const lpos = sc.at(-1)[LPOS];
-          const llen = sc.at(-1)[LLEN];
-          // console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
-
-          if (sc.at(-1)[EXP][TYPE] === $lam)
-          {
-            if (n1s[i][TYPE] === $param)
-            {
-              genericEdit(['removeSimple', exp[TAG], pos]);
-            }
-            else // removing body
-            {
-              // nothing
-            }
-          }
-          else if (exp[TYPE] === $app)
-          {
-            genericEdit(['removeSimple', exp[TAG], pos]);
-          }
-          else if (exp[TYPE] === $let || exp[TYPE] === $letrec || exp[TYPE] === $if || exp[TYPE] === $set)
-          {
-            // nothing
-          }
-          else
-          {
-            throw new Error(exp[TYPE]);
-          }
-          if (exp[lpos+2] === n1s[i][TAG])
-          {
-            sc.at(-1)[LPOS]++;
-          }
+          // old stuff in old stuff
+          sc.at(-1)[RPOS]++;
+        }
+        else if (orig === 'R')
+        {
+          throw new Error("TODO");
         }
       }
       else
       {
         // nothing
       }
-      i++;      
+
+      if (n1s[i][TYPE] < 3)
+      {
+        // nothing
+      }
+      else
+      {
+        sc.push([n1s[i], 0, n1s[i].length - 2, -99, -99, 'L']); 
+      }
+      i++;
     }
     else if (choice[0] === RIGHT)
     {
-      if (choice[1] > 1)
-      {
-        unconsumeChoice([RIGHT, choice[1]-1]);
-      }
+      // add happens on pop for compound exps (due to possible overwrites) 
       if (sc.length > 0)
       {
         const exp = sc.at(-1)[EXP];
+        const pos = sc.at(-1)[WPOS];
         const orig = sc.at(-1)[ORIG];
-        const pos = sc.at(-1)[POS];
-        const len = sc.at(-1)[LEN];
         
-        const comesFromRight = (orig === 'R');
-        if (comesFromRight)
+        if (orig === 'M')
         {
-          // console.log(`\t${exp} ${orig} ${pos}/${len}`);
-          sc.at(-1)[POS]++;
+          genericEdit(['insertSimple', exp[TAG], pos, n2s[j][TAG]]);
+          sc.at(-1)[WPOS]++;
         }
-        else // comesFromLeft
+        else if (orig === 'L')
         {
-          const lpos = sc.at(-1)[LPOS];
-          const llen = sc.at(-1)[LLEN];
-          // console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
-
-          if (exp[TYPE] === $lam)
+          const matchPos = findMatchPos();
+          if (matchPos !== false)
           {
-            if (n2s[j][TYPE] === $param)
-            {
-              genericEdit(['insertSimple', exp[TAG], pos, n2s[j][TAG]]);
-              sc.at(-1)[POS]++;
-            }
-            else // adding new body (could also use pos and len as for $app)
-            {
-              // console.log(`\tadding body`);
-              modifyTag(exp[TAG], pos, n2s[j][TAG]);
-              const numParamsToRemove = llen - lpos - 1; // num params remaining on left
-              if (numParamsToRemove > 0)
-              {
-                // console.log(`\tremoving ${numParamsToRemove} params`);
-                for (let q = 0; q < numParamsToRemove; q++)
-                {
-                  genericEdit(['removeSimple', exp[TAG], pos + 1]);
-                  sc.at(-1)[LPOS]++;  
-                }
-              }
-              sc.at(-1)[POS]++;
-            }
-          }
-          else if (exp[TYPE] === $app)
-          {
-            if (n2s[j][TYPE] === $id || n2s[j][TYPE] === $lit)
-            {
-              genericEdit(['insertSimple', exp[TAG], pos, n2s[j][TAG]]);
-              if (pos === len - 1)
-              {
-                const remainingArgsOnLeft = llen - lpos;
-                // console.log(`\tadded final argument, removing ${remainingArgsOnLeft} left args`);
-                for (let q = 0; q < remainingArgsOnLeft; q++)
-                {
-                  genericEdit(['removeSimple', exp[TAG], pos + 1]);
-                }
-              }
-              sc.at(-1)[POS]++;
-            }
-            else
-            {
-              throw new Error(`unexpected argument expression type ${n2s[j]}: ${tuple2string(n2s[j], n2s)})`);
-            }
-          }
-          else if (exp[TYPE] === $let || exp[TYPE] === $letrec || exp[TYPE] === $if || exp[TYPE] === $set)
-          {
-            modifyTag(exp[TAG], pos, n2s[j][TAG]);
-            sc.at(-1)[POS]++;
-          }
-          else
-          {
-            throw new Error(exp[TYPE]);
+            genericEdit(['insertSimple', sc.at(matchPos)[EXP][TAG], sc.at(matchPos)[WPOS], n2s[j][TAG]]); // insert attr
+            sc.at(matchPos)[WPOS]++;
           }
         }
-      }
-      else // nothing on stack
-      {
-        // nothing
+        else if (orig === 'R')
+        {
+          // new stuff in new stuff
+          sc.at(-1)[WPOS]++;
+        }
       }
 
       if (n2s[j][TYPE] < 3)
@@ -694,8 +632,7 @@ function diff2edits(diff, n1s, n2s) // step2
       }
       else
       {
-        sc.push([n2s[j].slice(0), 'R', 0, n2s[j].length-2]);
-        // adding will happen on pop
+        sc.push([n2s[j].slice(0), -99, -99, 0, n2s[j].length - 2, 'R']);
       }
       j++;      
     }
@@ -704,47 +641,31 @@ function diff2edits(diff, n1s, n2s) // step2
       throw new Error(choice[0]);
     }
 
+    console.log(`\t=> stack ${stack2string(sc)}`);
+
     while (sc.length > 0)
     {
-      const exp = sc.at(-1)[EXP];
+      const rpos = sc.at(-1)[RPOS];
+      const rlen = sc.at(-1)[RLEN];
+      const wpos = sc.at(-1)[WPOS];
+      const wlen = sc.at(-1)[WLEN];
       const orig = sc.at(-1)[ORIG];
-      const pos = sc.at(-1)[POS];
-      const len = sc.at(-1)[LEN];
-
-      const comesFromRight = (orig === 'R');
       
-      if (comesFromRight)
-      {
-        if (pos === len)
-        {    
-          // console.log(`\t${exp} ${orig} ${pos}/${len}`)
-          // console.log(`\tpopping`);
-          const topc = sc.pop();
-          add(topc[EXP]);
-        }
-        else
+      if (rpos === rlen && wpos === wlen)
+      {    
+        const topr = sc.pop();
+        console.log(`\t\t\tpopping ${frame2string(topr)}`);
+        if (orig === 'R')
         {
-          break;
+          add(topr[EXP]);
         }
       }
-      else // comesFromLeft
+      else
       {
-        const lpos = sc.at(-1)[LPOS];
-        const llen = sc.at(-1)[LLEN];
-        if (pos === len)
-        {
-          // console.log(`\t${exp} ${orig} ${pos}/${len} left ${lpos}/${llen}`);
-          // console.log(`\tlr exhausted: popping`);
-          sc.pop();
-        }
-        else
-        {
-          break;
-        }
+        break;
       }
     }
   }
-
   // console.log(`\nedits:\n${edits.join('\n')}`); // DEBUG
   return edits;
 }
@@ -806,149 +727,6 @@ function nodeStream(src, parser)
   const p = parser.parse(src).car;
   const ns = ast2tuples(p);
   return ns;
-}
-
-const R = 31;
-const M = 127;
-function hash2node(ns, nmap)
-{
-  const table = [[], [] ,[], [], [], [], [], [], []]; // bucket per ast type 
-
-  function hashName(s)
-  {
-    let h = 0;
-    for (let i = 0; i < s.length; i++)
-    {
-      h = (R * h + s.charCodeAt(i)) % M;
-    }
-    return h;
-  }
-
-  function doHash(n)
-  {
-    if (n[0] === '$id' || n[0] === '$param')
-    {
-      return hashName(n[2]);
-    }
-    else if (n[0] === '$lit')
-    {
-      if (typeof n[2] === 'string')
-      {
-        return hashName(n[2]);
-      }
-      else if (typeof n[2] === 'number')
-      {
-        return n[2] % M;
-      }
-      else if (n[2] === true)
-      {
-        return 1;
-      }
-      else if (n[2] === false)
-      {
-        return 0;
-      }
-      else
-      {
-        throw new Error();
-      }
-    }
-    else
-    {
-      let h = 0;
-      for (let i = 2; i < n.length; i++)
-      {
-        h = (R * h + hash(nmap[n[i]])) % M;
-      }
-      return h;
-    }
-  }
-
-  function hash(n)
-  {
-    const h = doHash(n);
-
-    let b = table[n[0]][h];
-    if (b === undefined)
-    {
-      b = [];
-      table[n[0]][h] = b;
-    }
-    b.push(n);
-    return h;
-  }
-
-  hash(ns[0]);
-  return table;
-}
-
-function node2hash(ns, nmap)
-{
-  const table = [];
-
-  function hashName(s)
-  {
-    let h = 0;
-    for (let i = 0; i < s.length; i++)
-    {
-      h = (R * h + s.charCodeAt(i)) % M;
-    }
-    return h;
-  }
-
-  function doHash(n)
-  {
-    if (n[0] === $id || n[0] === $param)
-    {
-      return hashName(n[2]);
-    }
-    else if (n[0] === $lit)
-    {
-      if (typeof n[2] === 'string')
-      {
-        return hashName(n[2]);
-      }
-      else if (typeof n[2] === 'number')
-      {
-        return n[2] % M;
-      }
-      else if (n[2] === true)
-      {
-        return 127;
-      }
-      else if (n[2] === false)
-      {
-        return 113;
-      }
-      else if (n[2] instanceof Null)
-      {
-        return 109;
-      }
-      else
-      {
-        throw new Error();
-      }
-    }
-    else
-    {
-      let h = 0;
-      for (let i = 2; i < n.length; i++)
-      {
-        h = (R * h + hash(nmap[n[i]])) % M;
-      }
-      return h;
-    }
-  }
-
-  function hash(n)
-  {
-    const h = doHash(n);
-    table[n[1]] = h;
-    return h;
-  }
-
-  hash(ns[0]);
-  return table;
 }
 
 function diff(n1s, n2s, options)
@@ -1017,9 +795,38 @@ function applyEdits(ts, edits)
   return m.filter(x => x);
 }
 
+function tuple2shortString(t)
+{
+  let str;
+  switch (t[0])
+  {
+    case $lit: str = '$lit'; break;
+    case $id: str = '$id'; break;
+    case $param: str = '$param'; break;
+    case $let: str = '$let'; break;
+    case $letrec: str = '$letrec'; break;
+    case $if: str = '$if'; break;
+    case $set: str = '$set'; break;
+    case $lam: str = '$lam'; break;
+    case $app: str = '$app'; break;
+    default: throw new Error(`cannot handle ${t[0]}`);
+  }
+  return `(${str}-${t[1]} ${t.slice(2).join(' ')})`;
+}
 
 function tuple2string(tuple, tuples)
 {
+
+  const m = nodeMap(tuples);
+
+  function lookupTag(tag)
+  {
+    if (m[tag])
+    {
+      return m[tag];
+    }
+    throw new Error(`cannot find tag ${tag} in ${tuples.map(tuple2shortString)}`);
+  }
 
   function stringify(t)
   {
@@ -1041,7 +848,7 @@ function tuple2string(tuple, tuples)
           }
         case $if:
           {
-            return `(if ${stringify(m[t[2]])} ${stringify(m[t[3]])} ${stringify(m[t[4]])})`;
+            return `(if ${stringify(lookupTag(t[2]))} ${stringify(lookupTag(t[3]))} ${stringify(lookupTag(t[4]))})`;
           }
         case $set:
           {
@@ -1053,13 +860,12 @@ function tuple2string(tuple, tuples)
         }
         case $app:
           {
-            return `(${stringify(m[t[2]])} ${t.slice(3).map(x => stringify(m[x])).join(' ')})`;
+            return `(${stringify(lookupTag(t[2]))} ${t.slice(3).map(x => stringify(lookupTag(x))).join(' ')})`;
           }
         default: throw new Error(`cannot handle ${t}`);
       }
     }
-  
-  const m = nodeMap(tuples);
+
   return stringify(tuple, m);
 }
 
@@ -1068,6 +874,149 @@ function tuples2string(tuples)
   return tuple2string(tuples[0], tuples);
 }
 
+// *** hashing
+// const R = 31;
+// const M = 127;
+// function hash2node(ns, nmap)
+// {
+//   const table = [[], [] ,[], [], [], [], [], [], []]; // bucket per ast type 
+
+//   function hashName(s)
+//   {
+//     let h = 0;
+//     for (let i = 0; i < s.length; i++)
+//     {
+//       h = (R * h + s.charCodeAt(i)) % M;
+//     }
+//     return h;
+//   }
+
+//   function doHash(n)
+//   {
+//     if (n[0] === '$id' || n[0] === '$param')
+//     {
+//       return hashName(n[2]);
+//     }
+//     else if (n[0] === '$lit')
+//     {
+//       if (typeof n[2] === 'string')
+//       {
+//         return hashName(n[2]);
+//       }
+//       else if (typeof n[2] === 'number')
+//       {
+//         return n[2] % M;
+//       }
+//       else if (n[2] === true)
+//       {
+//         return 1;
+//       }
+//       else if (n[2] === false)
+//       {
+//         return 0;
+//       }
+//       else
+//       {
+//         throw new Error();
+//       }
+//     }
+//     else
+//     {
+//       let h = 0;
+//       for (let i = 2; i < n.length; i++)
+//       {
+//         h = (R * h + hash(nmap[n[i]])) % M;
+//       }
+//       return h;
+//     }
+//   }
+
+//   function hash(n)
+//   {
+//     const h = doHash(n);
+
+//     let b = table[n[0]][h];
+//     if (b === undefined)
+//     {
+//       b = [];
+//       table[n[0]][h] = b;
+//     }
+//     b.push(n);
+//     return h;
+//   }
+
+//   hash(ns[0]);
+//   return table;
+// }
+
+// function node2hash(ns, nmap)
+// {
+//   const table = [];
+
+//   function hashName(s)
+//   {
+//     let h = 0;
+//     for (let i = 0; i < s.length; i++)
+//     {
+//       h = (R * h + s.charCodeAt(i)) % M;
+//     }
+//     return h;
+//   }
+
+//   function doHash(n)
+//   {
+//     if (n[0] === $id || n[0] === $param)
+//     {
+//       return hashName(n[2]);
+//     }
+//     else if (n[0] === $lit)
+//     {
+//       if (typeof n[2] === 'string')
+//       {
+//         return hashName(n[2]);
+//       }
+//       else if (typeof n[2] === 'number')
+//       {
+//         return n[2] % M;
+//       }
+//       else if (n[2] === true)
+//       {
+//         return 127;
+//       }
+//       else if (n[2] === false)
+//       {
+//         return 113;
+//       }
+//       else if (n[2] instanceof Null)
+//       {
+//         return 109;
+//       }
+//       else
+//       {
+//         throw new Error();
+//       }
+//     }
+//     else
+//     {
+//       let h = 0;
+//       for (let i = 2; i < n.length; i++)
+//       {
+//         h = (R * h + hash(nmap[n[i]])) % M;
+//       }
+//       return h;
+//     }
+//   }
+
+//   function hash(n)
+//   {
+//     const h = doHash(n);
+//     table[n[1]] = h;
+//     return h;
+//   }
+
+//   hash(ns[0]);
+//   return table;
+// }
 
 
 // ***

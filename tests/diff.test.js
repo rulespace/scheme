@@ -1,5 +1,5 @@
 import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
-import { nodeStream, diff, diff2edits, coarsifyEdits, applyEdits, tuples2string, diff2string } from '../differ.js';
+import { nodeStream, diff, diff2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, diff2string } from '../differ.js';
 
 
 function doDiff(src1, src2)
@@ -13,9 +13,9 @@ function doDiff(src1, src2)
   const p2str = tuples2string(n2s);
   
   console.log(`p1     ${p1str}
-  ${n1s.join(' ')}`);
+  ${n1s.map(tuple2shortString).join(' ')}`);
   console.log(`p2     ${p2str}
-  ${n2s.join(' ')}`);
+  ${n2s.map(tuple2shortString).join(' ')}`);
 
   const solutions = diff(n1s, n2s, {keepSuboptimalSolutions:false, returnAllSolutions:true});
   for (const solution of solutions)
@@ -29,7 +29,7 @@ function doDiff(src1, src2)
     const p1editstr = tuples2string(p1edit);
   
     console.log(`p1edit ${p1editstr}
-    ${p1edit.join(' ')}`);
+    ${p1edit.map(tuple2shortString).join(' ')}`);
   
     if (p1editstr !== p2str)
     {
@@ -89,7 +89,7 @@ test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
 test(`(let ((x 1)) x)`, `(let ((x 2)) (+ x 1))`);
 test(`(let ((p (list a))) x)`, `(let ((p (list b a))) x)`); // (3)
 test(`(let ((p (list a))) x)`, `(let ((p (list c b a))) x)`);
-test(`(let ((p (list a))) x)`, `(let ((p (list a b))) x)`);
+test(`(let ((p (list a))) x)`, `(let ((p (list a b))) x)`); // (4)
 test(`(let ((p (list a))) x)`, `(let ((p (list a b c))) x)`);
 test(`(let ((p (list a))) x)`, `(let ((p (list b a c))) x)`);
 
@@ -113,7 +113,7 @@ test(`(foo f g h)`, `(foo 1 g h)`);
 test(`(foo f g h)`, `(foo 1 2 3)`);
 test(`(list a b c d e f g h i j k l m n o p q r s t u v w x y z)`, `(list a b c d e f g h i j k l m n p q r s t u v w x y z)`);
 test(`(list a a a a a a a a a a a a a a a a a a)`, `(list a a a a a a a a a a b a a a a a a a a)`);
-test(`(list a a a a a a a a a a a a a a a a a a)`, `(list a a a a a a a a a a b a a a a a a a)`);
+test(`(list a a a)`, `(list a b a)`);
 test(`(let ((x (list a a a a a a a a a a a a a a a a a a))) b)`, `(let ((x (list a a a a a a a a a a a a a a a a a a))) c)`);
 
 testEq(`(let ((x (list a a a a a a a a a a a a a a a a a a))) b)`);
@@ -227,9 +227,9 @@ test(`(if x
 
 
 
-// test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
-// test(Deno.readTextFileSync('diffdata/regex1-smaller-left.scm'), Deno.readTextFileSync('diffdata/regex1-smaller-right.scm'));
-// test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-smallest-right.scm'));
+test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
+test(Deno.readTextFileSync('diffdata/regex1-smaller-left.scm'), Deno.readTextFileSync('diffdata/regex1-smaller-right.scm'));
+test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-smallest-right.scm'));
 
 // SUPPORT? lambda (=atom) args?
 // test(`(f 1 (lambda (x) 2) 3)`, `(f 1 (lambda (x) 9) 3)`); // fails under some worklist strategies

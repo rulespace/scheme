@@ -56,8 +56,6 @@ function testEq(src)
 
 const start = performance.now();
 
-
-
 // "same" benchmarks
 test(`(if a b c)`, `(if (let ((x (- 1 1))) (* a x)) (let ((y (+ 2 22))) (+ b y)) (let ((z (/ 3 33))) (- c z)))`);
 test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-smallest-right.scm'));
@@ -70,7 +68,7 @@ test(Deno.readTextFileSync('diffdata/churchnums-left.scm'), Deno.readTextFileSyn
 
 
 // (completely) different benchmarks
-test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
+test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm')); // INTERESTING: smallest-left is embedded+changed in (big) right
 
 
 
