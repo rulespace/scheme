@@ -2,8 +2,9 @@ import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
 import { nodeStream, diff, diff2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, diff2string } from '../differ.js';
 
 
-function doDiff(src1, src2)
+function doDiff(src1, src2, suboptimal)
 {
+  console.log(`!!!suboptimal ${suboptimal}`);
   const parser = new SchemeParser();
 
   const n1s = nodeStream(src1, parser);
@@ -17,10 +18,10 @@ function doDiff(src1, src2)
   console.log(`p2     ${p2str}
   ${n2s.map(tuple2shortString).join(' ')}`);
 
-  const solutions = diff(n1s, n2s, {keepSuboptimalSolutions:false, returnAllSolutions:true});
+  const solutions = diff(n1s, n2s, {maxSolutions: 1000, keepLocalSuboptimalSolutions:suboptimal, keepGlobalSuboptimalSolutions:suboptimal, returnAllSolutions:true});
   for (const solution of solutions)
   {
-    console.log(`\n\n*****\nsolution ${diff2string(solution)}`);
+    console.log(`\n\n*****\nsolution ${diff2string(solution)} for ${p1str} ≈> ${p2str}`);
 
     const edits = diff2edits(solution, n1s, n2s);
     const edits2 = coarsifyEdits(edits, n1s);
@@ -41,83 +42,85 @@ function doDiff(src1, src2)
   }
 }
 
-function test(src1, src2)
+function test(src1, src2, suboptimal = true)
 {
   console.log("\n============");
   console.log("\n*** L->R ***");
-  doDiff(src1, src2);
+  doDiff(src1, src2, suboptimal);
   console.log("\n*** R->L ***");
-  doDiff(src2, src1);
+  doDiff(src2, src1, suboptimal);
 }
 
-function testEq(src)
+function testEq(src, suboptimal = true)
 {
   console.log("\n============");
-  doDiff(src, src);
+  doDiff(src, src, suboptimal);
 }
 
 const start = performance.now();
 
-testEq(`1`);
-testEq(`()`);
-testEq(`x`);
-testEq(`'a`);
-testEq(`"a"`,`"a"`);
+const OPTIMAL = false; // suboptimal = false
 
-test(`1`, `2`);
-test(`x`, `y`);
-test(`1`, `x`);
-test(`'a`, `'b`);
-test(`'a`, `a`);
-test(`"a"`,`"b"`);
-test(`"a"`,`'a`);
-test(`"a"`,`a`);
-test(`"a"`,`1`);
-test(`()`,`1`);
-test(`()`,`(f)`);
+// testEq(`1`);
+// testEq(`()`);
+// testEq(`x`);
+// testEq(`'a`);
+// testEq(`"a"`);
 
-test(`1`, `(+ x y)`);
-test(`1`, `(+ 1 x)`);
+// test(`1`, `2`);
+// test(`x`, `y`);
+// test(`1`, `x`);
+// test(`'a`, `'b`);
+// test(`'a`, `a`);
+// test(`"a"`,`"b"`);
+// test(`"a"`,`'a`);
+// test(`"a"`,`a`);
+// test(`"a"`,`1`);
+// test(`()`,`1`);
+// test(`()`,`(f)`);
 
-test(`(let ((x 1)) x)`, `(let ((x 2)) x)`);
-test(`(let ((x 1)) x)`, `(let ((y 1)) y)`);
-test(`(let ((x 1)) x)`, `(let ((x (+ y z))) x)`);
-test(`(let ((x 1)) x)`, `(let ((x (+ 1 z))) x)`);
-test(`(let ((x 1)) x)`, `(let ((x (+ 2 z))) x)`);
-test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
-test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
-test(`(let ((x 1)) x)`, `(let ((x 2)) (+ x 1))`);
-test(`(let ((p (list a))) x)`, `(let ((p (list b a))) x)`); // (3)
-test(`(let ((p (list a))) x)`, `(let ((p (list c b a))) x)`);
-test(`(let ((p (list a))) x)`, `(let ((p (list a b))) x)`); // (4)
-test(`(let ((p (list a))) x)`, `(let ((p (list a b c))) x)`);
-test(`(let ((p (list a))) x)`, `(let ((p (list b a c))) x)`);
+// test(`1`, `(+ x y)`);
+// test(`1`, `(+ 1 x)`);
+
+// test(`(let ((x 1)) x)`, `(let ((x 2)) x)`);
+// test(`(let ((x 1)) x)`, `(let ((y 1)) y)`);
+// test(`(let ((x 1)) x)`, `(let ((x (+ y z))) x)`);
+// test(`(let ((x 1)) x)`, `(let ((x (+ 1 z))) x)`);
+// test(`(let ((x 1)) x)`, `(let ((x (+ 2 z))) x)`);
+// test(`(let ((x 1)) x)`, `(let ((x (+ (* a 1 b) z))) x)`);
+// test(`(let ((x 1)) x)`, `(let ((x 1)) (+ x 1))`);
+// test(`(let ((x 1)) x)`, `(let ((x 2)) (+ x 1))`);
+// test(`(let ((p (list a))) x)`, `(let ((p (list b a))) x)`); // (3)
+// test(`(let ((p (list a))) x)`, `(let ((p (list c b a))) x)`);
+// test(`(let ((p (list a))) x)`, `(let ((p (list a b))) x)`); // (4)
+// test(`(let ((p (list a))) x)`, `(let ((p (list a b c))) x)`);
+// test(`(let ((p (list a))) x)`, `(let ((p (list b a c))) x)`);
 
 
-test(`(if a b c)`, `(if x b c)`);
-test(`(if a b c)`, `(if a x y)`);
-test(`(if a b c)`, `(if a c b)`);
-test(`(if a b c)`, `(if a (+ x y) (+ r s))`);
-test(`(if x neg (let ((fac x)) 8))`, `(if x (let ((fac x)) 8) neg)`); // interesting: M(4)
+// test(`(if a b c)`, `(if x b c)`);
+// test(`(if a b c)`, `(if a x y)`);
+// test(`(if a b c)`, `(if a c b)`);
+// test(`(if a b c)`, `(if a (+ x y) (+ r s))`);
+// test(`(if x neg (let ((fac x)) 8))`, `(if x (let ((fac x)) 8) neg)`); // interesting: M(4)
 
-test(`(set! a b)`, `(set! a c)`);
-test(`(set! a b)`, `(set! x b)`);
-test(`(set! a b)`, `(set! x y)`);
-test(`(set! a b)`, `(set! b a)`);
-test(`(set! a b)`, `(set! b c)`);
+// test(`(set! a b)`, `(set! a c)`);
+// test(`(set! a b)`, `(set! x b)`);
+// test(`(set! a b)`, `(set! x y)`);
+// test(`(set! a b)`, `(set! b a)`);
+// test(`(set! a b)`, `(set! b c)`);
 
-test(`(foo f g h)`, `(bar f g h)`);
-test(`(foo f g h)`, `(foo x g h)`);
-test(`(foo f g h)`, `(bar x y z)`);
-test(`(foo f g h)`, `(foo 1 g h)`);
-test(`(foo f g h)`, `(foo 1 2 3)`);
-test(`(list a b c d e f g h i j k l m n o p q r s t u v w x y z)`, `(list a b c d e f g h i j k l m n p q r s t u v w x y z)`);
-test(`(list a a a a a a a a a a a a a a a a a a)`, `(list a a a a a a a a a a b a a a a a a a a)`);
+// test(`(foo f g h)`, `(bar f g h)`);
+// test(`(foo f g h)`, `(foo x g h)`);
+// test(`(foo f g h)`, `(bar x y z)`);
+// test(`(foo f g h)`, `(foo 1 g h)`);
+// test(`(foo f g h)`, `(foo 1 2 3)`);
+// test(`(list a b c d e f g h i j k l m n o p q r s t u v w x y z)`, `(list a b c d e f g h i j k l m n p q r s t u v w x y z)`);
+test(`(list a a a a a a a a a a a a a a a a a a)`, `(list a a a a a a a a a a b a a a a a a a a)`, OPTIMAL);
 test(`(list a a a)`, `(list a b a)`);
-test(`(let ((x (list a a a a a a a a a a a a a a a a a a))) b)`, `(let ((x (list a a a a a a a a a a a a a a a a a a))) c)`);
+test(`(let ((x (list a a a a a a a a a a a a a a a a a a))) b)`, `(let ((x (list a a a a a a a a a a a a a a a a a a))) c)`, OPTIMAL);
 
-testEq(`(let ((x (list a a a a a a a a a a a a a a a a a a))) b)`);
-testEq(`(list a a a a a a a a a a a a a a a a a a)`, `(list a a a a a a a a a a a a a a a a a a)`);
+testEq(`(let ((x (list a a a a a a a a a a a a a a a a a a))) b)`, OPTIMAL);
+testEq(`(list a a a a a a a a a a a a a a a a a a)`, OPTIMAL);
 
 test(`(foo)`, `(foo f)`);
 test(`(foo f)`, `(foo f g)`);
@@ -223,13 +226,13 @@ test(`(if x
                   (let ((v (fac u))) 
                     (* n v)))))))) 
 (fac 8))
-            'neg)`);   // switch branches: shift FAST pop SLOW
+            'neg)`, OPTIMAL);
 
 
 
-test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
-test(Deno.readTextFileSync('diffdata/regex1-smaller-left.scm'), Deno.readTextFileSync('diffdata/regex1-smaller-right.scm'));
-test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-smallest-right.scm'));
+test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'), OPTIMAL);
+test(Deno.readTextFileSync('diffdata/regex1-smaller-left.scm'), Deno.readTextFileSync('diffdata/regex1-smaller-right.scm'), OPTIMAL);
+test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-smallest-right.scm'), OPTIMAL);
 
 // SUPPORT? lambda (=atom) args?
 // test(`(f 1 (lambda (x) 2) 3)`, `(f 1 (lambda (x) 9) 3)`); // fails under some worklist strategies

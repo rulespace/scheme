@@ -226,25 +226,29 @@ function nodeMap(ts)
   return m;
 }
 
-function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutions)
+function step1(n1s, n1map, n2s, n2map, maxSolutions, returnAllSolutions, keepLocalSuboptimalSolutions, keepGlobalSuboptimalSolutions)
 {
   const initial = [[], 0, 0, 0];  // choices i j cost
-  const leafs = [];
+  const solutions = [];
   const todo = [initial];
 
   let globalSuboptimal = 0;
   let globalMinCost = 9007199254740991;
 
-  const minCost = [];
-  function isProgress(progress)
+  const localMinCost = [];
+  function isLocalProgress(progress)
   {
-    const [choices, i, j, cost] = progress;
-    const jbucket = minCost[i];
+    if (keepLocalSuboptimalSolutions)
+    {
+      return true;
+    }
+    const [_choices, i, j, cost] = progress;
+    const jbucket = localMinCost[i];
     if (jbucket === undefined)
     {
       const jb = [];
       jb[j] = cost;
-      minCost[i] = jb;
+      localMinCost[i] = jb;
       return true;
     }
     else
@@ -258,19 +262,10 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
     }
   }
 
-  // function progressSuboptimal(existing, proposed)
-  // {
-  //   return existing[I] === proposed[I] && existing[J] === proposed[J] && existing[COST] <= proposed[COST];
-  // }
-
-
-  // const node2hash1 = node2hash(n1s, n1map);
-  // const node2hash2 = node2hash(n2s, n2map);
-
   let localSuboptimal = 0;
   function pushProgress(progress)
   {
-    if (isProgress(progress))
+    if (isLocalProgress(progress))
     {
       todo.push(progress);
     }
@@ -283,7 +278,7 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
 
   function unshiftProgress(progress)
   {
-    if (isProgress(progress))
+    if (isLocalProgress(progress))
     {
       todo.unshift(progress);
     }
@@ -306,7 +301,7 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
 
   // const stmatches = [];
 
-  while (todo.length > 0)
+  while (todo.length > 0 && solutions.length < maxSolutions)
   {
 
     // if (leafs.length > 0) // DEBUG
@@ -344,8 +339,8 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
     {
       console.log(`solution ${cost} ${diff2string(choices)} (todo ${todo.length})`);
       // console.log(choices);
-      leafs.push([choices, cost]);
-      if (!keepSuboptimalSolutions)
+      solutions.push([choices, cost]);
+      if (!keepGlobalSuboptimalSolutions)
       {
         globalMinCost = cost; // because of earlier test always cost < minCost
       }
@@ -399,13 +394,13 @@ function step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutio
     rightProgress(choices, i, j, cost);
   }
 
-  leafs.sort((a, b) => a[1] - b[1]); // TODO: dynamically track shortest instead of post-sort
+  solutions.sort((a, b) => a[1] - b[1]); // TODO: dynamically track shortest instead of post-sort
   // console.log(leafs.slice(0, 100).join('\n'));
 
-  console.log(`solutions: ${leafs.length}; localSuboptimal: ${localSuboptimal} globalSuboptimal: ${globalSuboptimal}`); 
-  const [topChoices, cost] = leafs[0];
+  console.log(`solutions: ${solutions.length}; localSuboptimal: ${localSuboptimal} globalSuboptimal: ${globalSuboptimal}`); 
+  const [topChoices, cost] = solutions[0];
   // console.log(`top choices (cost ${cost}):\n${topChoices.join('\n')}`);  
-  return returnAllSolutions ? leafs.map(l => l[0]) : [topChoices];
+  return returnAllSolutions ? solutions.map(l => l[0]) : [topChoices];
 }
 
 
@@ -450,25 +445,39 @@ function diff2edits(diff, n1s, n2s) // step2
     edits.push(edit);
   }
 
-  function add(el)
+  function addTuple(el)
   {
     const edit = ['add', el]; 
-    console.log(`\t\t${edit}`); // DEBUG
+    console.log(`\t\tadd tuple ${tuple2shortString(el)}`); // DEBUG
     edits.push(edit);
   }
 
-  function remove(el)
+  function removeTuple(el)
   {
     const edit = ['remove', el];
-    console.log(`\t\t${edit}`); // DEBUG
+    console.log(`\t\tremove tuple ${tuple2shortString(el)}`); // DEBUG
     edits.push(edit); 
   }
 
-  function genericEdit(edit)
+  function addAttr(tag, pos, insertedTag)
   {
-    console.log(`\t\t${edit}`); // DEBUG
-    edits.push(edit);
+    const edit = ['insertSimple', tag, pos, insertedTag]; 
+    console.log(`\t\tadd attr ${tag} ${pos} ${insertedTag}`); // DEBUG
+    edits.push(edit); 
   }
+
+  function removeAttr(tag, pos)
+  {
+    const edit = ['removeSimple', tag, pos];
+    console.log(`\t\tremove attr ${tag} ${pos}`); // DEBUG
+    edits.push(edit)
+  }
+
+  // function genericEdit(edit)
+  // {
+  //   console.log(`\t\t${edit}`); // DEBUG
+  //   edits.push(edit);
+  // }
 
   function frame2string(frame)
   {
@@ -480,17 +489,37 @@ function diff2edits(diff, n1s, n2s) // step2
     return stack.map(frame2string).toReversed().join(" ");
   }
 
-  function findMatchPos()
+  function findMRPos()
   {
-    for (let s = sc.length - 2; s >= 0; s--)
+    for (let s = sc.length - 1; s >= 0; s--)
     {
       // console.log(`\t\tinspecting ${s}/${sc.length - 1}`); // DEBUG
-      // const pos = sc.at(s)[POS];
-      // const len = sc.at(s)[LEN];
-      // if (pos < len)
+      const pos = sc.at(s)[WPOS];
+      const len = sc.at(s)[WLEN];
+      if (pos < len)
       {
         const orig = sc.at(s)[ORIG];
-        if (orig === 'M')
+        if (orig === 'M' || orig === 'R')
+        {
+          // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
+          return s;
+        }
+      }
+    }
+    return false; // no higher-up match
+  }
+
+  function findMLPos()
+  {
+    for (let s = sc.length - 1; s >= 0; s--)
+    {
+      // console.log(`\t\tinspecting ${s}/${sc.length - 1}`); // DEBUG
+      const pos = sc.at(s)[RPOS];
+      const len = sc.at(s)[RLEN];
+      if (pos < len)
+      {
+        const orig = sc.at(s)[ORIG];
+        if (orig === 'M' || orig === 'L')
         {
           // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
           return s;
@@ -504,41 +533,49 @@ function diff2edits(diff, n1s, n2s) // step2
   {
     const choice = consumeChoice();
     console.log(`\n${n1s[i] && tuple2shortString(n1s[i])} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice[0]] + (choice[1] === 1 ? '' : `(${choice[1]})`)}%c ${n2s[j] && tuple2shortString(n2s[j])}`, 'color:blue', 'color:default');
-    console.log(`\tstack ${stack2string(sc)}`);
+    // console.log(`\tstack ${stack2string(sc)}`);
 
     if (choice[0] === MATCH) // with a match TYPE n1s[i] === n2s[j] always
     {
+      removeTuple(n2s[j]);
       if (sc.length > 0)
       {
-        const exp = sc.at(-1)[EXP];
-        const pos = sc.at(-1)[WPOS];
-        const orig = sc.at(-1)[ORIG];
-        
-        if (orig === 'M')
+        const MRPos = findMRPos();
+        if (MRPos !== false)
         {
-          sc.at(-1)[WPOS]++;
-          sc.at(-1)[RPOS]++;
-        }
-        else if (orig === 'R')
-        {
-          console.log(`\t\toverwrite ${tuple2shortString(exp)} ${pos} ${n1s[i][TAG]}`); 
-          exp[pos+2] = n1s[i][TAG]; // overwrite
-          const matchPos = findMatchPos();
-          if (matchPos !== false)
+          if (sc.at(MRPos)[ORIG] === 'M')
           {
-            genericEdit(['removeSimple', sc.at(matchPos)[EXP][TAG], sc.at(matchPos)[WPOS]]); // remove attr
+            addAttr(sc.at(MRPos)[EXP][TAG], sc.at(MRPos)[WPOS], n1s[i][TAG]);
+            sc.at(MRPos)[WPOS]++;  
           }
-          sc.at(-1)[WPOS]++;
-        }
-        else if (orig === 'L')
-        {
-          const matchPos = findMatchPos();
-          if (matchPos !== false)
+          else if (sc.at(MRPos)[ORIG] === 'R')
           {
-            genericEdit(['insertSimple', sc.at(matchPos)[EXP][TAG], sc.at(matchPos)[WPOS], n1s[i][TAG]]); // insert attr
-            sc.at(matchPos)[WPOS]++;
+            console.log(`\t\toverwrite ${tuple2shortString(sc.at(MRPos)[EXP])} ${sc.at(MRPos)[WPOS]} ${n1s[i][TAG]}`); 
+            sc.at(MRPos)[EXP][sc.at(MRPos)[WPOS]+2] = n1s[i][TAG]; // overwrite    
+            sc.at(MRPos)[WPOS]++;  
           }
-          sc.at(-1)[RPOS]++;
+          else
+          {
+            throw new Error();
+          }
+        }
+
+        const MLPos = findMLPos();
+        if (MLPos !== false)
+        {
+          if (sc.at(MLPos)[ORIG] === 'M')
+          {
+            removeAttr(sc.at(MLPos)[EXP][TAG], sc.at(MLPos)[WPOS]);
+            sc.at(MLPos)[RPOS]++;
+          }
+          else if (sc.at(MLPos)[ORIG] === 'L')
+          {
+            sc.at(MLPos)[RPOS]++;
+          }
+          else
+          {
+            throw new Error();
+          }
         }
       }
       
@@ -559,31 +596,26 @@ function diff2edits(diff, n1s, n2s) // step2
     }
     else if (choice[0] === LEFT)
     {
-      remove(n1s[i]);
+      removeTuple(n1s[i]);
       if (sc.length > 0)
       {
-        const exp = sc.at(-1)[EXP];
-        const pos = sc.at(-1)[WPOS];
-        const orig = sc.at(-1)[ORIG];
-        
-        if (orig === 'M')
+        const MLPos = findMLPos();
+        if (MLPos !== false)
         {
-          genericEdit(['removeSimple', exp[TAG], pos]);
-          sc.at(-1)[RPOS]++;
+          if (sc.at(MLPos)[ORIG] === 'M')
+          {
+            removeAttr(sc.at(MLPos)[EXP][TAG], sc.at(MLPos)[WPOS]);
+            sc.at(MLPos)[RPOS]++;
+          }
+          else if (sc.at(MLPos)[ORIG] === 'L')
+          {
+            sc.at(MLPos)[RPOS]++;
+          }
+          else
+          {
+            throw new Error();
+          }
         }
-        else if (orig === 'L')
-        {
-          // old stuff in old stuff
-          sc.at(-1)[RPOS]++;
-        }
-        else if (orig === 'R')
-        {
-          throw new Error("TODO");
-        }
-      }
-      else
-      {
-        // nothing
       }
 
       if (n1s[i][TYPE] < 3)
@@ -601,34 +633,28 @@ function diff2edits(diff, n1s, n2s) // step2
       // add happens on pop for compound exps (due to possible overwrites) 
       if (sc.length > 0)
       {
-        const exp = sc.at(-1)[EXP];
-        const pos = sc.at(-1)[WPOS];
-        const orig = sc.at(-1)[ORIG];
-        
-        if (orig === 'M')
+        const MRPos = findMRPos();
+        if (MRPos !== false)
         {
-          genericEdit(['insertSimple', exp[TAG], pos, n2s[j][TAG]]);
-          sc.at(-1)[WPOS]++;
-        }
-        else if (orig === 'L')
-        {
-          const matchPos = findMatchPos();
-          if (matchPos !== false)
+          if (sc.at(MRPos)[ORIG] === 'M')
           {
-            genericEdit(['insertSimple', sc.at(matchPos)[EXP][TAG], sc.at(matchPos)[WPOS], n2s[j][TAG]]); // insert attr
-            sc.at(matchPos)[WPOS]++;
+            addAttr(sc.at(MRPos)[EXP][TAG], sc.at(MRPos)[WPOS], n2s[j][TAG]); // insert attr
+            sc.at(MRPos)[WPOS]++;  
           }
-        }
-        else if (orig === 'R')
-        {
-          // new stuff in new stuff
-          sc.at(-1)[WPOS]++;
+          else if (sc.at(MRPos)[ORIG] === 'R')
+          {
+            sc.at(MRPos)[WPOS]++;  
+          }
+          else
+          {
+            throw new Error();
+          }
         }
       }
 
       if (n2s[j][TYPE] < 3)
       {
-        add(n2s[j]);
+        addTuple(n2s[j]);
       }
       else
       {
@@ -657,7 +683,7 @@ function diff2edits(diff, n1s, n2s) // step2
         console.log(`\t\t\tpopping ${frame2string(topr)}`);
         if (orig === 'R')
         {
-          add(topr[EXP]);
+          addTuple(topr[EXP]);
         }
       }
       else
@@ -734,13 +760,12 @@ function diff(n1s, n2s, options)
   const n1map = nodeMap(n1s);
   const n2map = nodeMap(n2s);
 
-  // const hash2node1 = hash2node(n1s, n1map);
-  // const hash2node2 = hash2node(n2s, n2map);
-
+  const maxSolutions = options.maxSolutions || 1000;
   const returnAllSolutions = options?.returnAllSolutions;
-  const keepSuboptimalSolutions = options?.keepSuboptimalSolutions;
+  const keepGlobalSuboptimalSolutions = options?.keepGlobalSuboptimalSolutions;
+  const keepLocalSuboptimalSolutions = options?.keepLocalSuboptimalSolutions;
 
-  const solutions = step1(n1s, n1map, n2s, n2map, returnAllSolutions, keepSuboptimalSolutions);
+  const solutions = step1(n1s, n1map, n2s, n2map, maxSolutions, returnAllSolutions, keepLocalSuboptimalSolutions, keepGlobalSuboptimalSolutions);
   return solutions;
 }
 
@@ -840,11 +865,11 @@ function tuple2string(tuple, tuples)
           }
         case $let:
           {
-            return `(let ((${stringify(m[t[2]])} ${stringify(m[t[3]])})) ${stringify(m[t[4]])})`;
+            return `(let ((${stringify(lookupTag(t[2]))} ${stringify(lookupTag(t[3]))})) ${stringify(lookupTag(t[4]))})`;
           }
         case $letrec:
           {
-            return `(letrec ((${stringify(m[t[2]])} ${stringify(m[t[3]])})) ${stringify(m[t[4]])})`;
+            return `(letrec ((${stringify(lookupTag(t[2]))} ${stringify(lookupTag(t[3]))})) ${stringify(lookupTag(t[4]))})`;
           }
         case $if:
           {
@@ -873,235 +898,3 @@ function tuples2string(tuples)
 {
   return tuple2string(tuples[0], tuples);
 }
-
-// *** hashing
-// const R = 31;
-// const M = 127;
-// function hash2node(ns, nmap)
-// {
-//   const table = [[], [] ,[], [], [], [], [], [], []]; // bucket per ast type 
-
-//   function hashName(s)
-//   {
-//     let h = 0;
-//     for (let i = 0; i < s.length; i++)
-//     {
-//       h = (R * h + s.charCodeAt(i)) % M;
-//     }
-//     return h;
-//   }
-
-//   function doHash(n)
-//   {
-//     if (n[0] === '$id' || n[0] === '$param')
-//     {
-//       return hashName(n[2]);
-//     }
-//     else if (n[0] === '$lit')
-//     {
-//       if (typeof n[2] === 'string')
-//       {
-//         return hashName(n[2]);
-//       }
-//       else if (typeof n[2] === 'number')
-//       {
-//         return n[2] % M;
-//       }
-//       else if (n[2] === true)
-//       {
-//         return 1;
-//       }
-//       else if (n[2] === false)
-//       {
-//         return 0;
-//       }
-//       else
-//       {
-//         throw new Error();
-//       }
-//     }
-//     else
-//     {
-//       let h = 0;
-//       for (let i = 2; i < n.length; i++)
-//       {
-//         h = (R * h + hash(nmap[n[i]])) % M;
-//       }
-//       return h;
-//     }
-//   }
-
-//   function hash(n)
-//   {
-//     const h = doHash(n);
-
-//     let b = table[n[0]][h];
-//     if (b === undefined)
-//     {
-//       b = [];
-//       table[n[0]][h] = b;
-//     }
-//     b.push(n);
-//     return h;
-//   }
-
-//   hash(ns[0]);
-//   return table;
-// }
-
-// function node2hash(ns, nmap)
-// {
-//   const table = [];
-
-//   function hashName(s)
-//   {
-//     let h = 0;
-//     for (let i = 0; i < s.length; i++)
-//     {
-//       h = (R * h + s.charCodeAt(i)) % M;
-//     }
-//     return h;
-//   }
-
-//   function doHash(n)
-//   {
-//     if (n[0] === $id || n[0] === $param)
-//     {
-//       return hashName(n[2]);
-//     }
-//     else if (n[0] === $lit)
-//     {
-//       if (typeof n[2] === 'string')
-//       {
-//         return hashName(n[2]);
-//       }
-//       else if (typeof n[2] === 'number')
-//       {
-//         return n[2] % M;
-//       }
-//       else if (n[2] === true)
-//       {
-//         return 127;
-//       }
-//       else if (n[2] === false)
-//       {
-//         return 113;
-//       }
-//       else if (n[2] instanceof Null)
-//       {
-//         return 109;
-//       }
-//       else
-//       {
-//         throw new Error();
-//       }
-//     }
-//     else
-//     {
-//       let h = 0;
-//       for (let i = 2; i < n.length; i++)
-//       {
-//         h = (R * h + hash(nmap[n[i]])) % M;
-//       }
-//       return h;
-//     }
-//   }
-
-//   function hash(n)
-//   {
-//     const h = doHash(n);
-//     table[n[1]] = h;
-//     return h;
-//   }
-
-//   hash(ns[0]);
-//   return table;
-// }
-
-
-// ***
-// push/unsh according to cost
-  // function push(choice)
-  // {
-  //   const cost = choice[3];
-  //   if (todo.length > 0 && cost >= todo.at(-1)[3])
-  //   {
-  //     todo.unshift(choice);
-  //   }
-  //   else
-  //   {
-  //     todo.push(choice);
-  //   }
-  // }
-
-  // push/unsh according to lr advancement
-  // function push(choice)
-  // {
-  //   if (todo.length > 0 && ((choice[1] + choice[2]) < (todo.at(-1)[1] + todo.at(-1)[2])))
-  //   {
-  //     todo.unshift(choice);
-  //   }
-  //   else
-  //   {
-  //     todo.push(choice);
-  //   }
-  // }
-
-  // push/unsh according to l advancement
-  // function push(choice)
-  // {
-  //   if (todo.length > 0 && choice[1] < todo.at(-1)[1])
-  //   {
-  //     todo.unshift(choice);
-  //   }
-  //   else
-  //   {
-  //     todo.push(choice);
-  //   }
-  // }
-
-  // *** memoizing subtreeMatch
-
-    // let matches;
-    // const m = stmatches[left[1]];
-    // if (m === undefined)
-    // {
-    //   matches = subtreeMatches(left, n1map, right, n2map);
-    //   stmatches[left[1]] = [[right[1], matches]];
-    //   // console.log(`1) ${left[1]} ${right[1]} ${matches}`);
-    // }
-    // else
-    // {
-    //   for (const [r, mm] of m)
-    //   {
-    //     if (right[1] === r)
-    //     {
-    //       matches = mm;
-    //       break;
-    //     }
-    //   }
-    //   if (matches === undefined)
-    //   {
-    //     matches = subtreeMatches(left, n1map, right, n2map);
-    //     stmatches[left[1]].push([right[1], matches]);
-    //     // console.log(`2) ${left[1]} ${right[1]} ${matches}`);
-    //   }
-    // }
-
-
-    // *** accumulating push
-    // function pushRightProgress(choices, i, j, cost)
-    // {
-    //   // const prevChoice = choices.at(-1);
-    //   // if (prevChoice !== undefined && prevChoice[0] === RIGHT)
-    //   // {
-    //   //   const newChoices = choices.slice(0, -1);
-    //   //   newChoices.push([RIGHT, prevChoice[1] + 1]);
-    //   //   pushProgress([newChoices, i, j + 1, cost + 99]);
-    //   // }
-    //   // else
-    //   {
-    //     pushProgress([choices.concat([[RIGHT, 1]]), i, j+1, cost + 100]);
-    //   }
-    // }
-  
