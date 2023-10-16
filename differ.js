@@ -24,9 +24,26 @@ const COST = 3;
 
 // edits
 const MATCH = 0;
-const MODIFY = 1;
-const LEFT = 2;
+// const MODIFY = 1;
+const LEFT = 1;
 const RIGHT = 3;
+
+function editName(e)
+{
+  if (e === MATCH)
+  {
+    return 'M'
+  };
+  if (e === LEFT)
+  {
+    return 'L';
+  }
+  if (e === RIGHT)
+  {
+    return 'R';
+  }
+  throw new Error();
+}
 
 function diff2string(diff)
 {
@@ -43,12 +60,6 @@ function diff2string(diff)
   }
   return sb;
 }
-
-function progressEq(d1, d2)
-{
-  return d1[COST] === d2[COST] && d1[I] === d2[I] && d1[J] === d2[J];
-}
-
 
 function ast2tuples(ast)
 {
@@ -226,183 +237,98 @@ function nodeMap(ts)
   return m;
 }
 
-function step1(n1s, n1map, n2s, n2map, maxSolutions, returnAllSolutions, keepLocalSuboptimalSolutions, keepGlobalSuboptimalSolutions)
+function step1(n1s, n2s, maxSolutions, returnAllSolutions, keepLocalSuboptimalSolutions, keepGlobalSuboptimalSolutions)
 {
-  const initial = [[], 0, 0, 0];  // choices i j cost
-  const solutions = [];
-  const todo = [initial];
+  const N = n1s.length; // width, n1, left
+  const M = n2s.length; // height, n2, right
 
-  let globalSuboptimal = 0;
-  let globalMinCost = 9007199254740991;
+  const a = new Uint32Array((N+1)*(M+1));
+  // console.log(`N ${N} M ${M} a.length ${a.length}`);
 
-  const localMinCost = [];
-  function isLocalProgress(progress)
+  function cell2string(cellValue)
   {
-    if (keepLocalSuboptimalSolutions)
+    return `[${cellValue >> 2}, ${editName(cellValue & 0b11)}]`;
+  }
+  
+  const index = (i, j) => j * (N+1) + i;
+
+  a[index(0, 0)] = 0;
+
+  for (let i = 1; i <= N; i++)
+  {
+    a[index(i, 0)] = (i << 2) | LEFT;
+  }
+
+  for (let j = 1; j <= M; j++)
+  {
+    a[index(0, j)] = (j << 2) | RIGHT;
+  }
+
+  for (let j = 1; j <= M; j++)
+  {
+    for (let i = 1; i <= N; i++)
     {
-      return true;
-    }
-    const [_choices, i, j, cost] = progress;
-    const jbucket = localMinCost[i];
-    if (jbucket === undefined)
-    {
-      const jb = [];
-      jb[j] = cost;
-      localMinCost[i] = jb;
-      return true;
-    }
-    else
-    {
-      if (jbucket[j] === undefined)
+      const left = n1s[i-1];
+      const right = n2s[j-1];
+      
+      const match = left[0] === right[0] && (left[0] >= 3 || left[2] === right[2]);
+      if (match) 
       {
-        jbucket[j] = cost;
-        return true;
-      }
-      return cost < jbucket[j];
-    }
-  }
-
-  let localSuboptimal = 0;
-  function pushProgress(progress)
-  {
-    if (isLocalProgress(progress))
-    {
-      todo.push(progress);
-    }
-    else
-    {
-      localSuboptimal++;
-      // console.log(`not adding duplicate progress ${progress}`);
-    }
-  }
-
-  function unshiftProgress(progress)
-  {
-    if (isLocalProgress(progress))
-    {
-      todo.unshift(progress);
-    }
-    else
-    {
-      localSuboptimal++;
-      // console.log(`not adding duplicate progress ${progress}`);
-    }
-  }
-
-  function rightProgress(choices, i, j, cost)
-  {
-    unshiftProgress([choices.concat([[RIGHT, 1]]), i, j+1, cost + 1]);
-  }
-
-  function leftProgress(choices, i, j, cost)
-  {
-    unshiftProgress([choices.concat([[LEFT, 1]]), i + 1, j, cost + 1]);
-  }
-
-  // const stmatches = [];
-
-  while (todo.length > 0 && solutions.length < maxSolutions)
-  {
-
-    // if (leafs.length > 0) // DEBUG
-    // {
-    //   leafs.sort((a, b) => a[1] - b[1]);
-    //   console.log(`${leafs.length} solutions, current top ${leafs[0].join(' ')}`);  
-    // }
-
-    // let same = 0; // DEBUG
-    // for (let yy = 0; yy < todo.length; yy++)
-    // {
-    //   for (let yyy = yy + 1; yyy < todo.length; yyy++)
-    //   {
-    //     if (progressEq(todo[yy], todo[yyy]))
-    //     {
-    //       same++;
-    //     }
-    //   }
-    // }
-    // console.log(`same ${same}`);
-
-    // const [choices, i, j, cost] = todo.length % 2 === 0 ? todo.pop() : todo.shift();
-    const [choices, i, j, cost] = todo.pop();
-    
-    // console.log(diff2string(choices)); // DEBUG
-
-    if (cost >= globalMinCost)
-    {
-      // console.log(`minCost ${globalMinCost} killing ${cost}`);
-      globalSuboptimal++;
-      continue;
-    }
-
-    if (i === n1s.length && j === n2s.length)
-    {
-      console.log(`solution ${cost} ${diff2string(choices)} (todo ${todo.length})`);
-      // console.log(choices);
-      solutions.push([choices, cost]);
-      if (!keepGlobalSuboptimalSolutions)
-      {
-        globalMinCost = cost; // because of earlier test always cost < minCost
-      }
-      continue;
-    }
-
-    if (i === n1s.length)
-    {
-      rightProgress(choices, i, j, cost);
-      continue;
-    }
-    
-    if (j === n2s.length)
-    {
-      leftProgress(choices, i, j, cost);
-      continue;
-    }
-
-    // if (Math.round(performance.now()) % 1000 === 0) // DEBUG
-    // {
-    //   // todo.sort((a, b) => a[1] - b[1]); // b-a => high to low
-    //   // todo.splice(0, todo.length % 2);
-    //   console.log(i, n1s.length, j, n2s.length, todo.length, cost, minCost);    
-    //   // console.log(`cheapest i ${todo.at(-1)[1]} j ${todo.at(-1)[2]} cost ${todo.at(-1)[3]}`);
-    // }
-
-    const left = n1s[i];
-    const right = n2s[j];
-    
-    if (left[0] === right[0])
-    {
-      const matches = subtreeMatches(left, n1map, right, n2map);
-      if (matches > 0)
-      {
-        pushProgress([choices.concat([[MATCH, matches]]), i+matches, j+matches, cost]);
+        a[index(i, j)] = ((a[index(i-1,j-1)] >> 2) << 2) | MATCH; 
       }
       else
       {
-        if (left[0] < 3)
+        if ((a[index(i-1, j)] >> 2) <= (a[index(i, j-1)] >> 2))
         {
-          // no M for simple (non-compound) here (possible M from subtree matches higher up)
+          a[index(i, j)] = (((a[index(i-1,j)] >> 2) + 1) << 2) | LEFT;
         }
-        else // always compound, no full match
+        else
         {
-          // if (left[0] === '$let' || left[0] === '$letrec' || left[0] === '$if' || left[0] === '$lam' || left[0] === '$app') || ...
-          pushProgress([choices.concat([[MATCH, 1]]), i+1, j+1, cost]);
-        }  
+          a[index(i, j)] = (((a[index(i,j-1)] >> 2) + 1) << 2) | RIGHT;
+        }
       }
+      // console.log(`i ${i} j ${j} l ${tuple2shortString(left)} r ${tuple2shortString(right)}: ⬅︎ ${cell2string(a[index(i-1,j)])} ⬉ ${cell2string(a[index(i-1,j-1)])} ⬆︎ ${cell2string(a[index(i,j-1)])}  => ${cell2string(a[index(i,j)])} ${match ? '(match)' : ''}`); // DEBUG
     }
-    leftProgress(choices, i, j, cost);
-    rightProgress(choices, i, j, cost);
   }
 
-  solutions.sort((a, b) => a[1] - b[1]); // TODO: dynamically track shortest instead of post-sort
-  // console.log(leafs.slice(0, 100).join('\n'));
+  // DEBUG:
+  // for (let j = 0; j <= M; j++)
+  // {
+  //   let line = '';
+  //   for (let i = 0; i <= N; i++)
+  //   {
+  //     line += `${cell2string(a[index(i,j)])}\t`;
+  //   }
+  //   console.log(line);
+  // }
 
-  console.log(`solutions: ${solutions.length}; localSuboptimal: ${localSuboptimal} globalSuboptimal: ${globalSuboptimal}`); 
-  const [topChoices, cost] = solutions[0];
-  // console.log(`top choices (cost ${cost}):\n${topChoices.join('\n')}`);  
-  return returnAllSolutions ? solutions.map(l => l[0]) : [topChoices];
+  let i = N;
+  let j = M;
+  const edits = [];
+  while (i !== 0 || j !== 0)
+  {
+    const edit = a[index(i,j)] & 0b11;
+    edits.unshift([edit, 1]);
+    if (edit === MATCH)
+    {
+      i--;
+      j--;
+    }
+    else if (edit === LEFT)
+    {
+      i--;
+    }
+    else if (edit === RIGHT)
+    {
+      j--;
+    }
+    else
+    {
+      throw new Error();
+    }
+  }
+  return [edits];
 }
-
 
 function diff2edits(diff, n1s, n2s) // step2
 {
@@ -448,28 +374,28 @@ function diff2edits(diff, n1s, n2s) // step2
   function addTuple(el)
   {
     const edit = ['add', el]; 
-    console.log(`\t\tadd tuple ${tuple2shortString(el)}`); // DEBUG
+    // console.log(`\t\tadd tuple ${tuple2shortString(el)}`); // DDD
     edits.push(edit);
   }
 
   function removeTuple(el)
   {
     const edit = ['remove', el];
-    console.log(`\t\tremove tuple ${tuple2shortString(el)}`); // DEBUG
+    // console.log(`\t\tremove tuple ${tuple2shortString(el)}`); // DDD
     edits.push(edit); 
   }
 
   function addAttr(tag, pos, insertedTag)
   {
     const edit = ['insertSimple', tag, pos, insertedTag]; 
-    console.log(`\t\tadd attr ${tag} ${pos} ${insertedTag}`); // DEBUG
+    // console.log(`\t\tadd attr ${tag} ${pos} ${insertedTag}`); // DDD
     edits.push(edit); 
   }
 
   function removeAttr(tag, pos)
   {
     const edit = ['removeSimple', tag, pos];
-    console.log(`\t\tremove attr ${tag} ${pos}`); // DEBUG
+    // console.log(`\t\tremove attr ${tag} ${pos}`); // DDD
     edits.push(edit)
   }
 
@@ -532,7 +458,7 @@ function diff2edits(diff, n1s, n2s) // step2
   while (c < diff.length)
   {
     const choice = consumeChoice();
-    console.log(`\n${n1s[i] && tuple2shortString(n1s[i])} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice[0]] + (choice[1] === 1 ? '' : `(${choice[1]})`)}%c ${n2s[j] && tuple2shortString(n2s[j])}`, 'color:blue', 'color:default');
+    // console.log(`\n${n1s[i] && tuple2shortString(n1s[i])} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice[0]] + (choice[1] === 1 ? '' : `(${choice[1]})`)}%c ${n2s[j] && tuple2shortString(n2s[j])}`, 'color:blue', 'color:default'); // DDD
     // console.log(`\tstack ${stack2string(sc)}`);
 
     if (choice[0] === MATCH) // with a match TYPE n1s[i] === n2s[j] always
@@ -550,7 +476,7 @@ function diff2edits(diff, n1s, n2s) // step2
           }
           else if (sc.at(MRPos)[ORIG] === 'R')
           {
-            console.log(`\t\toverwrite ${tuple2shortString(sc.at(MRPos)[EXP])} ${sc.at(MRPos)[WPOS]} ${n1s[i][TAG]}`); 
+            // console.log(`\t\toverwrite ${tuple2shortString(sc.at(MRPos)[EXP])} ${sc.at(MRPos)[WPOS]} ${n1s[i][TAG]}`); // DDD
             sc.at(MRPos)[EXP][sc.at(MRPos)[WPOS]+2] = n1s[i][TAG]; // overwrite    
             sc.at(MRPos)[WPOS]++;  
           }
@@ -667,7 +593,7 @@ function diff2edits(diff, n1s, n2s) // step2
       throw new Error(choice[0]);
     }
 
-    console.log(`\t=> stack ${stack2string(sc)}`);
+    // console.log(`\t=> stack ${stack2string(sc)}`); // DDD
 
     while (sc.length > 0)
     {
@@ -680,7 +606,7 @@ function diff2edits(diff, n1s, n2s) // step2
       if (rpos === rlen && wpos === wlen)
       {    
         const topr = sc.pop();
-        console.log(`\t\t\tpopping ${frame2string(topr)}`);
+        // console.log(`\t\t\tpopping ${frame2string(topr)}`); // DDD
         if (orig === 'R')
         {
           addTuple(topr[EXP]);
@@ -755,17 +681,14 @@ function nodeStream(src, parser)
   return ns;
 }
 
-function diff(n1s, n2s, options)
+function diff(n1s, n2s, options = {})
 {
-  const n1map = nodeMap(n1s);
-  const n2map = nodeMap(n2s);
-
   const maxSolutions = options.maxSolutions || 1000;
   const returnAllSolutions = options?.returnAllSolutions;
   const keepGlobalSuboptimalSolutions = options?.keepGlobalSuboptimalSolutions;
   const keepLocalSuboptimalSolutions = options?.keepLocalSuboptimalSolutions;
 
-  const solutions = step1(n1s, n1map, n2s, n2map, maxSolutions, returnAllSolutions, keepLocalSuboptimalSolutions, keepGlobalSuboptimalSolutions);
+  const solutions = step1(n1s, n2s, maxSolutions, returnAllSolutions, keepLocalSuboptimalSolutions, keepGlobalSuboptimalSolutions);
   return solutions;
 }
 

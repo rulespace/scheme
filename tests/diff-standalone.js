@@ -27,8 +27,8 @@ function doDiff(src1, src2)
     const p1edit = applyEdits(n1s, edits2);  
     const p1editstr = tuples2string(p1edit);
   
-    console.log(`p1edit ${p1editstr}
-    ${p1edit.join(' ')}`);
+    // console.log(`p1edit ${p1editstr} DEBUG
+    // ${p1edit.join(' ')}`);
   
     if (p1editstr !== p2str)
     {
@@ -46,10 +46,37 @@ function test(src1, src2)
   console.log(`duration: ${performance.now() - start} ms`);
 }
 
+function randomArrayCreator(length, numSymbols)
+{
 
-test(`(if a b c)`, `(if (let ((x (- 1 1))) (* a x)) (let ((y (+ 2 22))) (+ b y)) (let ((z (/ 3 33))) (- c z)))`);
+  function getRandomInt(n)
+  {
+    return Math.floor(Math.random() * n);
+  }
+  
+  const a = [];
+  for (let i = 0; i < length; i++)
+  {
+    const s = getRandomInt(numSymbols);
+    a.push(s)
+  }
+
+  return a;
+}
+
+function randomStringCreator(length, numSymbols)
+{
+  return randomArrayCreator(length, numSymbols).map(n => String.fromCharCode(97 + n)).join(' ');
+}
+
+//  test(`1`, `2`);
+
+test(`(${randomStringCreator(15000, 26)})`, `(${randomStringCreator(15000, 26)})`);
+
+// test(Deno.readTextFileSync('diffdata/human.fa.scm'), Deno.readTextFileSync('diffdata/orang.fa.scm'));
 
 // test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'));
 
 
 // deno test --allow-read diff-standalone.js
+// deno test --allow-read --v8-flags=--max-old-space-size=8192 diff-standalone.js
