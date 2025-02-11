@@ -24,10 +24,12 @@ function doDiff(src1, src2)
     const edits = diff2edits(solution, n1s, n2s);
     const edits2 = coarsifyEdits(edits, n1s);
 
+    console.log(`${edits2.join(' ')}`); // DEBUG
+
     const p1edit = applyEdits(n1s, edits2);  
     const p1editstr = tuples2string(p1edit);
   
-    // console.log(`p1edit ${p1editstr} DEBUG
+    // console.log(`p1edit ${p1editstr} // DEBUG
     // ${p1edit.join(' ')}`);
   
     if (p1editstr !== p2str)
@@ -69,9 +71,11 @@ function randomStringCreator(length, numSymbols)
   return randomArrayCreator(length, numSymbols).map(n => String.fromCharCode(97 + n)).join(' ');
 }
 
-//  test(`1`, `2`);
+test(`(let ((x 2)) y)`, `(+ x 2)`);
 
-test(`(${randomStringCreator(15000, 26)})`, `(${randomStringCreator(15000, 26)})`);
+// test(`(+ x y)`, `(+ x y z)`)
+
+// test(`(${randomStringCreator(15000, 26)})`, `(${randomStringCreator(15000, 26)})`);
 
 // test(Deno.readTextFileSync('diffdata/human.fa.scm'), Deno.readTextFileSync('diffdata/orang.fa.scm'));
 

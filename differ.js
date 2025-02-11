@@ -425,7 +425,7 @@ function diff2edits(diff, n1s, n2s) // step2
       if (pos < len)
       {
         const orig = sc.at(s)[ORIG];
-        if (orig === 'M' || orig === 'R')
+        if (orig === 'M' || orig === 'R') // guaranteed? ('L' cannot have open write pos)
         {
           // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
           return s;
@@ -445,7 +445,7 @@ function diff2edits(diff, n1s, n2s) // step2
       if (pos < len)
       {
         const orig = sc.at(s)[ORIG];
-        if (orig === 'M' || orig === 'L')
+        if (orig === 'M' || orig === 'L') // guaranteed? ('R' cannot have open read pos)
         {
           // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
           return s;
