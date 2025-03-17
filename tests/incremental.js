@@ -2,7 +2,7 @@ import { create_igreval, instance2dot } from '../igreval.js';
 import { kalloc_conc } from '../kalloc-rsp.js';
 import { lattice_conc } from '../lattice-rsp.js';
 import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
-import { diff } from '../differ.js';
+import { diff } from '../differ-ast.js';
 import { assertTrue } from '../deps.ts';
 
 

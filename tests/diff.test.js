@@ -1,5 +1,5 @@
 import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
-import { nodeStream, diff, diff2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, diff2string } from '../differ.js';
+import { nodeStream, computeSelection, selection2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, diff2string } from '../differ.js';
 
 
 function doDiff(src1, src2, suboptimal)
@@ -17,13 +17,12 @@ function doDiff(src1, src2, suboptimal)
   console.log(`p2     ${p2str}
   ${n2s.map(tuple2shortString).join(' ')}`);
 
-  const solutions = diff(n1s, n2s, {maxSolutions: 1000, keepLocalSuboptimalSolutions:false, keepGlobalSuboptimalSolutions:false, returnAllSolutions:false});
-  // const solutions = diff(n1s, n2s, {maxSolutions: 1000, keepLocalSuboptimalSolutions:suboptimal, keepGlobalSuboptimalSolutions:suboptimal, returnAllSolutions:true});
+  const solutions = computeSelection(n1s, n2s);
   for (const solution of solutions)
   {
     console.log(`\n\n*****\nsolution ${diff2string(solution)} for ${p1str} ≈> ${p2str}`);
 
-    const edits = diff2edits(solution, n1s, n2s);
+    const edits = selection2edits(solution, n1s, n2s);
     const edits2 = coarsifyEdits(edits, n1s);
 
     const p1edit = applyEdits(n1s, edits2);  
@@ -238,5 +237,8 @@ test(`(if x
 test(Deno.readTextFileSync('diffdata/regex1-left.scm'), Deno.readTextFileSync('diffdata/regex1-right.scm'), OPTIMAL);
 test(Deno.readTextFileSync('diffdata/regex1-smaller-left.scm'), Deno.readTextFileSync('diffdata/regex1-smaller-right.scm'), OPTIMAL);
 test(Deno.readTextFileSync('diffdata/regex1-smallest-left.scm'), Deno.readTextFileSync('diffdata/regex1-smallest-right.scm'), OPTIMAL);
+
+
+console.log(`duration: ${performance.now() - start} ms`);
 
 // deno test --allow-read diff.test.js

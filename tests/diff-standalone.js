@@ -1,5 +1,6 @@
 import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
-import { nodeStream, diff, diff2edits, coarsifyEdits, applyEdits, tuples2string, diff2string } from '../differ.js';
+import { nodeStream, computeSelection, MATCH, 
+  selection2edits, coarsifyEdits, applyEdits, tuples2string, diff2string } from '../differ.js';
 
 function doDiff(src1, src2)
 {
@@ -16,15 +17,16 @@ function doDiff(src1, src2)
   // console.log(`p2     ${p2str}
   // ${n2s.join(' ')}`);
 
-  const solutions = diff(n1s, n2s);
+  const solutions = computeSelection(n1s, n2s);
   for (const solution of solutions)
   {
     console.log(`\n\n*****\nsolution ${diff2string(solution)}`);
+    console.log(`distance: ${solution.filter(selection => selection !== MATCH).length}`);
 
-    const edits = diff2edits(solution, n1s, n2s);
+    const edits = selection2edits(solution, n1s, n2s);
     const edits2 = coarsifyEdits(edits, n1s);
 
-    console.log(`${edits2.join(' ')}`); // DEBUG
+    // console.log(`${edits2.join(' ')}`); // DEBUG
 
     const p1edit = applyEdits(n1s, edits2);  
     const p1editstr = tuples2string(p1edit);
@@ -71,9 +73,10 @@ function randomStringCreator(length, numSymbols)
   return randomArrayCreator(length, numSymbols).map(n => String.fromCharCode(97 + n)).join(' ');
 }
 
-test(`(let ((x 2)) y)`, `(+ x 2)`);
+//test(`(let ((x 2)) y)`, `(+ x 2)`);
+//test(`(lambda () f)`, `(lambda (f) f)`);
 
-// test(`(+ x y)`, `(+ x y z)`)
+//test(`(+ x y)`, `(+ x y z)`)
 
 // test(`(${randomStringCreator(15000, 26)})`, `(${randomStringCreator(15000, 26)})`);
 

@@ -1,60 +1,38 @@
 import { assertTrue } from './deps.ts';
 import { Null, Pair, SchemeParser, Sym } from './sexp-reader.js';
 
-export { nodeStream, nodeMap, diff, diff2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, diff2string };
+export { nodeStream, nodeMap,
+  computeSelection, MATCH, LEFT, RIGHT,
+  selection2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, diff2string };
 
 // TODO: quote is handled as an application
 
-// ast
-const $lit = 0;
-const $id = 1;
-const $param = 2;
-const $let = 3;
-const $letrec = 4;
-const $if = 5;
-const $set = 6;
-const $lam = 7;
-const $app = 8;
+// tree
+const $atom = 0;
+const $list = 1;
 
-// progress
-const CHOICES = 0;
-const I = 1;
-const J = 2
-const COST = 3;
-
-// edits
+// selections
 const MATCH = 0;
 // const MODIFY = 1;
-const LEFT = 1;
-const RIGHT = 3;
+const LEFT = 2;
+const RIGHT = 4;
 
-function editName(e)
-{
-  if (e === MATCH)
-  {
-    return 'M'
-  };
-  if (e === LEFT)
-  {
-    return 'L';
-  }
-  if (e === RIGHT)
-  {
-    return 'R';
-  }
-  throw new Error();
-}
+// edits
+const ADD_NODE = 0;
+const DELETE_NODE = 1;
+const INSERT_CHILD = 2;
+const REMOVE_CHILD = 4;
 
 function diff2string(diff)
 {
   let sb = "";
-  for (const [d, l] of diff)
+  for (const d of diff)
   {
     switch (d)
     {
-      case MATCH: l === 1 ? sb += 'M' : sb += `M(${l})`; break;
-      case LEFT: l === 1 ? sb += 'L' : sb += `L(${l})`; break;
-      case RIGHT: l === 1 ? sb += 'R' : sb += `R(${l})`; break;
+      case MATCH: sb += 'M'; break;
+      case LEFT: sb += 'L'; break;
+      case RIGHT: sb += 'R'; break;
       default: throw new Error(d);
     }
   }
@@ -65,167 +43,34 @@ function ast2tuples(ast)
 {
   if (ast instanceof String)
   {
-    return [[$lit, ast.tag, ast.toString()]];
+    return [[$atom, ast.tag, ast.toString()]];
   }
   if (ast instanceof Number)
   {
-    return [[$lit, ast.tag, ast.valueOf()]];
+    return [[$atom, ast.tag, ast.valueOf()]];
   }
   if (ast instanceof Boolean)
   {
-    return [[$lit, ast.tag, ast.valueOf()]];
+    return [[$atom, ast.tag, ast.valueOf()]];
   }
   if (ast instanceof Null)
   {
-    return [[$lit, ast.tag, new Null().valueOf()]]; // TODO: improve
+    // return [[$atom, ast.tag, new Null().valueOf()]]; // TODO: improve // TODO: atom or list?
+    return [[$list, ast.tag]]; // TODO: improve // TODO: atom or list?
   }
   if (ast instanceof Sym)
   {
-    return [[$id, ast.tag, ast.toString()]];
+    return [[$atom, ast.tag, ast.toString()]];
   }
   if (ast instanceof Pair)
   {
-    const car = ast.car;
-    if (car instanceof Sym)
-    {
-      switch (car.name)
-      {
-        case "lambda":
-        {
-          const params = ast.cdr.car;
-          const paramTuples = [...params].map(sym => [$param, sym.tag, sym.toString()]);
-          const body = ast.cdr.cdr.car; // only one body exp allowed (here, and elsewhere)
-          const bodyTuples = ast2tuples(body);
-          return [[$lam, ast.tag, ...[...params].map(t => t.tag), body.tag], ...paramTuples, ...bodyTuples];
-        }
-        case "let":
-        {
-          const binding = ast.cdr.car;
-          const name = binding.car.car;
-          const init = binding.car.cdr.car;
-          const body = ast.cdr.cdr.car;
-          const nameTuples = ast2tuples(name);
-          const initTuples = ast2tuples(init);
-          const bodyTuples = ast2tuples(body);
-          return [[$let, ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
-        }
-        case "letrec":
-        {
-          const binding = ast.cdr.car;
-          const name = binding.car.car;
-          const init = binding.car.cdr.car;
-          const body = ast.cdr.cdr.car;
-          const nameTuples = ast2tuples(name);
-          const initTuples = ast2tuples(init);
-          const bodyTuples = ast2tuples(body);
-          return [[$letrec, ast.tag, name.tag, init.tag, body.tag], ...nameTuples, ...initTuples, ...bodyTuples];
-        }
-        case "if":
-        {
-          const cond = ast.cdr.car;
-          const cons = ast.cdr.cdr.car;
-          const alt = ast.cdr.cdr.cdr.car;
-          const condTuples = ast2tuples(cond);
-          const consTuples = ast2tuples(cons);
-          const altTuples = ast2tuples(alt);
-          return [[$if, ast.tag, cond.tag, cons.tag, alt.tag], ...condTuples, ...consTuples, ...altTuples];
-        }
-        // case "cons":
-        // {
-        //   const car = ast.cdr.car;
-        //   const cdr = ast.cdr.cdr.car;
-        //   const carTuples = ast2tuples(car);
-        //   const cdrTuples = ast2tuples(cdr);
-        //   return [['$cons', ast.tag, car.tag, cdr.tag], ...carTuples, ...cdrTuples];
-        // }
-        // case "car":
-        // {
-        //   const pair = ast.cdr.car;
-        //   const pairTuples = ast2tuples(pair);
-        //   return [['$car', ast.tag, pair.tag], ...pairTuples];
-        // }
-        // case "cdr":
-        // {
-        //   const pair = ast.cdr.car;
-        //   const pairTuples = ast2tuples(pair);
-        //   return [['$cdr', ast.tag, pair.tag], ...pairTuples];
-        // }
-        case "set!":
-        {
-          const name = ast.cdr.car;
-          const update = ast.cdr.cdr.car;
-          const nameTuples = ast2tuples(name);
-          const updateTuples = ast2tuples(update);
-          return [[$set, ast.tag, name.tag, update.tag], ...nameTuples,  ...updateTuples];         
-        }
-        // case "set-car!":
-        // {
-        //   const name = ast.cdr.car;
-        //   const update = ast.cdr.cdr.car;
-        //   const nameTuples = ast2tuples(name);
-        //   const updateTuples = ast2tuples(update);
-        //   return [['$setcar', ast.tag, name.tag, update.tag], ...nameTuples, ...updateTuples];         
-        // }
-        // case "set-cdr!":
-        // {
-        //   const name = ast.cdr.car;
-        //   const update = ast.cdr.cdr.car;
-        //   const nameTuples = ast2tuples(name);
-        //   const updateTuples = ast2tuples(update);
-        //   return [['$setcdr', ast.tag, name.tag, update.tag], ...nameTuples, ...updateTuples];         
-        // }
-
-        default: // app
-        {
-          const ratorTuples = ast2tuples(car);
-          const argTuples = [...ast.cdr].map(ast2tuples);
-          return [[$app, ast.tag, car.tag, ...[...ast.cdr].map(t => t.tag)], ...ratorTuples, ...argTuples.flat()];
-        }
-      }
-    }
-    else // not a special form
-    { // TODO: cloned from default (`app`) case above
-      const ratorTuples = ast2tuples(car);
-      const argTuples = [...ast.cdr].map(ast2tuples);
-      return [[$app, ast.tag, car.tag, ...[...ast.cdr].map(t => t.tag)], ...ratorTuples, ...argTuples.flat()];
-    }
+    const ratorTuples = ast2tuples(ast.car);
+    const argTuples = [...ast.cdr].map(ast2tuples);
+    return [[$list, ast.tag, ast.car.tag, ...[...ast.cdr].map(t => t.tag)], ...ratorTuples, ...argTuples.flat()];
   }
   throw new Error(`cannot handle expression ${ast} of type ${ast?.constructor?.name}`);
 }
 
-
-function subtreeMatches(t1, n1map, t2, n2map)
-{
-  if (((t1[0] < 3)) && t1[0] === t2[0])
-  {
-    if (t1[2] === t2[2])
-    {
-      return 1;
-    }
-    return 0;
-  }
-  else
-  {
-    if (t1[0] !== t2[0] || t1.length !== t2.length)
-    {
-      return 0;
-    }
-    let intermediateN = 1;
-    for (let i = 2; i < t1.length; i++)
-    {
-      const nn = subtreeMatches(n1map[t1[i]], n1map, n2map[t2[i]], n2map);
-      if (nn === 0)
-      {
-        return 0;
-      }
-      else
-      {
-        intermediateN += nn;
-      }
-    }
-    return intermediateN;  
-  }
-}
 
 function nodeMap(ts)
 {
@@ -237,59 +82,61 @@ function nodeMap(ts)
   return m;
 }
 
-function step1(n1s, n2s, maxSolutions, returnAllSolutions, keepLocalSuboptimalSolutions, keepGlobalSuboptimalSolutions)
+function computeSelection(leftNodes, rightNodes) // step 1
 {
-  const N = n1s.length; // width, n1, left
-  const M = n2s.length; // height, n2, right
+  const N = leftNodes.length; // width
+  const M = rightNodes.length; // height
 
-  const a = new Uint32Array((N+1)*(M+1));
+  const a = new Uint16Array((N+1)*(M+1));
   // console.log(`N ${N} M ${M} a.length ${a.length}`);
-
-  function cell2string(cellValue)
-  {
-    return `[${cellValue >> 2}, ${editName(cellValue & 0b11)}]`;
-  }
   
-  const index = (i, j) => j * (N+1) + i;
+  const index = (col, row) => row * (N+1) + col;
+
+
+  // step 1a: fill in matrix
 
   a[index(0, 0)] = 0;
 
   for (let i = 1; i <= N; i++)
   {
-    a[index(i, 0)] = (i << 2) | LEFT;
+    a[index(i, 0)] = i;
   }
 
   for (let j = 1; j <= M; j++)
   {
-    a[index(0, j)] = (j << 2) | RIGHT;
+    a[index(0, j)] = j;
   }
 
   for (let j = 1; j <= M; j++)
   {
     for (let i = 1; i <= N; i++)
     {
-      const left = n1s[i-1];
-      const right = n2s[j-1];
+      const left = leftNodes[i-1];
+      const right = rightNodes[j-1];
       
-      const match = left[0] === right[0] && (left[0] >= 3 || left[2] === right[2]);
+      const match = left[0] === right[0] && (left[0] === $list || left[2] === right[2]);
       if (match) 
       {
-        a[index(i, j)] = ((a[index(i-1,j-1)] >> 2) << 2) | MATCH; 
+        a[index(i, j)] = a[index(i-1,j-1)]; 
       }
       else
       {
-        if ((a[index(i-1, j)] >> 2) <= (a[index(i, j-1)] >> 2))
+        const left = a[index(i-1, j)];
+        const up = a[index(i, j-1)];
+        if (left <= up)
         {
-          a[index(i, j)] = (((a[index(i-1,j)] >> 2) + 1) << 2) | LEFT;
+          a[index(i, j)] = left + 1;
         }
         else
         {
-          a[index(i, j)] = (((a[index(i,j-1)] >> 2) + 1) << 2) | RIGHT;
+          a[index(i, j)] = up + 1;
         }
       }
-      // console.log(`i ${i} j ${j} l ${tuple2shortString(left)} r ${tuple2shortString(right)}: ⬅︎ ${cell2string(a[index(i-1,j)])} ⬉ ${cell2string(a[index(i-1,j-1)])} ⬆︎ ${cell2string(a[index(i,j-1)])}  => ${cell2string(a[index(i,j)])} ${match ? '(match)' : ''}`); // DEBUG
+      // console.log(`i ${i} j ${j} l ${tuple2shortString(left)} r ${tuple2shortString(right)}: ⬅︎ ${a[index(i-1,j)]} ⬉ ${a[index(i-1,j-1)]} ⬆︎ ${a[index(i,j-1)]}  => ${a[index(i,j)]} ${match ? '(match)' : (a[index(i-1, j)] <= a[index(i, j-1)] ) ? '(left)' : '(right)'}`); // DEBUG
     }
   }
+  
+  // console.log(`distance: ${a[index(N, M)]}`); // DEBUG 
 
   // DEBUG:
   // for (let j = 0; j <= M; j++)
@@ -297,40 +144,45 @@ function step1(n1s, n2s, maxSolutions, returnAllSolutions, keepLocalSuboptimalSo
   //   let line = '';
   //   for (let i = 0; i <= N; i++)
   //   {
-  //     line += `${cell2string(a[index(i,j)])}\t`;
+  //     line += `${a[index(i,j)]}\t`;
   //   }
   //   console.log(line);
   // }
 
+  // step 1b: trace back optimal path
   let i = N;
   let j = M;
-  const edits = [];
+  const selections = [];
+  let curr = a[index(i,j)];
   while (i !== 0 || j !== 0)
   {
-    const edit = a[index(i,j)] & 0b11;
-    edits.unshift([edit, 1]);
-    if (edit === MATCH)
+    const left = a[index(i-1,j)];
+    if (left === curr - 1)
     {
+      selections.unshift(LEFT);    
       i--;
+      curr = left;
+      continue;
+    }
+
+    const up = a[index(i,j-1)];
+    if (up === curr - 1)
+    {
+      selections.unshift(RIGHT);    
       j--;
+      curr = up;
+      continue;
     }
-    else if (edit === LEFT)
-    {
-      i--;
-    }
-    else if (edit === RIGHT)
-    {
-      j--;
-    }
-    else
-    {
-      throw new Error();
-    }
+
+    selections.unshift(MATCH);    
+    i--;
+    j--;
+    curr = a[index(i,j)];
   }
-  return [edits];
+  return [selections];
 }
 
-function diff2edits(diff, n1s, n2s) // step2
+function selection2edits(selections, leftNodes, rightNodes) // step2
 {
   //stack
   const EXP = 0;
@@ -352,58 +204,38 @@ function diff2edits(diff, n1s, n2s) // step2
   const sc = [];
   const edits = [];
 
-  function consumeChoice()
+  function consumeSelection()
   {
-    return diff[c++];
+    return selections[c++];
   }
 
-  // function modifyVal(tag, pos, val)
-  // {
-  //   const edit = ['modifyVal', tag, pos, val];
-  //   // console.log(`\t\t${edit}`); DEBUG
-  //   edits.push(edit);
-  // }
-
-  function modifyTag(tag, pos, newTag)
+  function addNode(el)
   {
-    const edit = ['modifyTag', tag, pos, newTag];
-    // console.log(`\t\t${edit}`); DEBUG
+    const edit = [ADD_NODE, el]; 
+    // console.log(`\t\tadd node ${tuple2shortString(el)}`); // DDD
     edits.push(edit);
   }
 
-  function addTuple(el)
+  function removeNode(el)
   {
-    const edit = ['add', el]; 
-    // console.log(`\t\tadd tuple ${tuple2shortString(el)}`); // DDD
-    edits.push(edit);
-  }
-
-  function removeTuple(el)
-  {
-    const edit = ['remove', el];
-    // console.log(`\t\tremove tuple ${tuple2shortString(el)}`); // DDD
+    const edit = [DELETE_NODE, el];
+    // console.log(`\t\tremove node ${tuple2shortString(el)}`); // DDD
     edits.push(edit); 
   }
 
-  function addAttr(tag, pos, insertedTag)
+  function insertChild(tag, pos, insertedTag)
   {
-    const edit = ['insertSimple', tag, pos, insertedTag]; 
-    // console.log(`\t\tadd attr ${tag} ${pos} ${insertedTag}`); // DDD
+    const edit = [INSERT_CHILD, tag, pos, insertedTag]; 
+    // console.log(`\t\tinsert child ${tag} ${pos} ${insertedTag}`); // DDD
     edits.push(edit); 
   }
 
-  function removeAttr(tag, pos)
+  function removeChild(tag, pos)
   {
-    const edit = ['removeSimple', tag, pos];
-    // console.log(`\t\tremove attr ${tag} ${pos}`); // DDD
+    const edit = [REMOVE_CHILD, tag, pos];
+    // console.log(`\t\tremove child ${tag} ${pos}`); // DDD
     edits.push(edit)
   }
-
-  // function genericEdit(edit)
-  // {
-  //   console.log(`\t\t${edit}`); // DEBUG
-  //   edits.push(edit);
-  // }
 
   function frame2string(frame)
   {
@@ -415,7 +247,7 @@ function diff2edits(diff, n1s, n2s) // step2
     return stack.map(frame2string).toReversed().join(" ");
   }
 
-  function findMRPos()
+  function openWritePos()
   {
     for (let s = sc.length - 1; s >= 0; s--)
     {
@@ -424,18 +256,14 @@ function diff2edits(diff, n1s, n2s) // step2
       const len = sc.at(s)[WLEN];
       if (pos < len)
       {
-        const orig = sc.at(s)[ORIG];
-        if (orig === 'M' || orig === 'R') // guaranteed? ('L' cannot have open write pos)
-        {
-          // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
-          return s;
-        }
+        // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
+        return s; // assumption: M or R (L cannot have open write pos)
       }
     }
     return false; // no higher-up match
   }
 
-  function findMLPos()
+  function openReadPos()
   {
     for (let s = sc.length - 1; s >= 0; s--)
     {
@@ -443,42 +271,38 @@ function diff2edits(diff, n1s, n2s) // step2
       const pos = sc.at(s)[RPOS];
       const len = sc.at(s)[RLEN];
       if (pos < len)
-      {
-        const orig = sc.at(s)[ORIG];
-        if (orig === 'M' || orig === 'L') // guaranteed? ('R' cannot have open read pos)
-        {
-          // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
-          return s;
-        }
+      {      
+        // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
+        return s; // assumption: M or L (R cannot have open read pos)
       }
     }
     return false; // no higher-up match
   }
 
-  while (c < diff.length)
+  while (c < selections.length)
   {
-    const choice = consumeChoice();
-    // console.log(`\n${n1s[i] && tuple2shortString(n1s[i])} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice[0]] + (choice[1] === 1 ? '' : `(${choice[1]})`)}%c ${n2s[j] && tuple2shortString(n2s[j])}`, 'color:blue', 'color:default'); // DDD
+    const selection = consumeSelection();
+    // console.log(`\n${n1s[i] && tuple2shortString(n1s[i])} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice]}%c ${n2s[j] && tuple2shortString(n2s[j])}`, 'color:blue', 'color:default'); // DDD
     // console.log(`\tstack ${stack2string(sc)}`);
 
-    if (choice[0] === MATCH) // with a match TYPE n1s[i] === n2s[j] always
+    if (selection === MATCH) // with a match TYPE n1s[i] === n2s[j] always
     {
-      removeTuple(n2s[j]);
+      removeNode(rightNodes[j]);
       if (sc.length > 0)
       {
-        const MRPos = findMRPos();
-        if (MRPos !== false)
+        const writePos = openWritePos();
+        if (writePos !== false)
         {
-          if (sc.at(MRPos)[ORIG] === 'M')
+          if (sc.at(writePos)[ORIG] === MATCH)
           {
-            addAttr(sc.at(MRPos)[EXP][TAG], sc.at(MRPos)[WPOS], n1s[i][TAG]);
-            sc.at(MRPos)[WPOS]++;  
+            insertChild(sc.at(writePos)[EXP][TAG], sc.at(writePos)[WPOS], leftNodes[i][TAG]);
+            sc.at(writePos)[WPOS]++;  
           }
-          else if (sc.at(MRPos)[ORIG] === 'R')
+          else if (sc.at(writePos)[ORIG] === RIGHT)
           {
             // console.log(`\t\toverwrite ${tuple2shortString(sc.at(MRPos)[EXP])} ${sc.at(MRPos)[WPOS]} ${n1s[i][TAG]}`); // DDD
-            sc.at(MRPos)[EXP][sc.at(MRPos)[WPOS]+2] = n1s[i][TAG]; // overwrite    
-            sc.at(MRPos)[WPOS]++;  
+            sc.at(writePos)[EXP][sc.at(writePos)[WPOS]+2] = leftNodes[i][TAG]; // overwrite    
+            sc.at(writePos)[WPOS]++;  
           }
           else
           {
@@ -486,17 +310,17 @@ function diff2edits(diff, n1s, n2s) // step2
           }
         }
 
-        const MLPos = findMLPos();
-        if (MLPos !== false)
+        const readPos = openReadPos();
+        if (readPos !== false)
         {
-          if (sc.at(MLPos)[ORIG] === 'M')
+          if (sc.at(readPos)[ORIG] === MATCH)
           {
-            removeAttr(sc.at(MLPos)[EXP][TAG], sc.at(MLPos)[WPOS]);
-            sc.at(MLPos)[RPOS]++;
+            removeChild(sc.at(readPos)[EXP][TAG], sc.at(readPos)[WPOS]);
+            sc.at(readPos)[RPOS]++;
           }
-          else if (sc.at(MLPos)[ORIG] === 'L')
+          else if (sc.at(readPos)[ORIG] === LEFT)
           {
-            sc.at(MLPos)[RPOS]++;
+            sc.at(readPos)[RPOS]++;
           }
           else
           {
@@ -505,37 +329,33 @@ function diff2edits(diff, n1s, n2s) // step2
         }
       }
       
-      if (n1s[i][TYPE] < 3) // if not compound exp
-      {
-        // nothing
-      }
-      else if (choice[1] > 1) // subexpression match: no push, treat it as atomic match
+      if (leftNodes[i][TYPE] === $atom) // if not compound exp
       {
         // nothing
       }
       else
       {
-        sc.push([n1s[i], 0, n1s[i].length - 2, 0, n2s[j].length - 2, 'M']); 
+        sc.push([leftNodes[i], 0, leftNodes[i].length - 2, 0, rightNodes[j].length - 2, MATCH]); 
       }
-      i += choice[1];
-      j += choice[1];
+      i++;
+      j++;
     }
-    else if (choice[0] === LEFT)
+    else if (selection === LEFT)
     {
-      removeTuple(n1s[i]);
+      removeNode(leftNodes[i]);
       if (sc.length > 0)
       {
-        const MLPos = findMLPos();
-        if (MLPos !== false)
+        const readPos = openReadPos();
+        if (readPos !== false)
         {
-          if (sc.at(MLPos)[ORIG] === 'M')
+          if (sc.at(readPos)[ORIG] === MATCH)
           {
-            removeAttr(sc.at(MLPos)[EXP][TAG], sc.at(MLPos)[WPOS]);
-            sc.at(MLPos)[RPOS]++;
+            removeChild(sc.at(readPos)[EXP][TAG], sc.at(readPos)[WPOS]);
+            sc.at(readPos)[RPOS]++;
           }
-          else if (sc.at(MLPos)[ORIG] === 'L')
+          else if (sc.at(readPos)[ORIG] === LEFT)
           {
-            sc.at(MLPos)[RPOS]++;
+            sc.at(readPos)[RPOS]++;
           }
           else
           {
@@ -544,32 +364,32 @@ function diff2edits(diff, n1s, n2s) // step2
         }
       }
 
-      if (n1s[i][TYPE] < 3)
+      if (leftNodes[i][TYPE] === $atom)
       {
         // nothing
       }
       else
       {
-        sc.push([n1s[i], 0, n1s[i].length - 2, -99, -99, 'L']); 
+        sc.push([leftNodes[i], 0, leftNodes[i].length - 2, -99, -99, LEFT]); 
       }
       i++;
     }
-    else if (choice[0] === RIGHT)
+    else if (selection === RIGHT)
     {
       // add happens on pop for compound exps (due to possible overwrites) 
       if (sc.length > 0)
       {
-        const MRPos = findMRPos();
-        if (MRPos !== false)
+        const writePos = openWritePos();
+        if (writePos !== false)
         {
-          if (sc.at(MRPos)[ORIG] === 'M')
+          if (sc.at(writePos)[ORIG] === MATCH)
           {
-            addAttr(sc.at(MRPos)[EXP][TAG], sc.at(MRPos)[WPOS], n2s[j][TAG]); // insert attr
-            sc.at(MRPos)[WPOS]++;  
+            insertChild(sc.at(writePos)[EXP][TAG], sc.at(writePos)[WPOS], rightNodes[j][TAG]); // insert attr
+            sc.at(writePos)[WPOS]++;  
           }
-          else if (sc.at(MRPos)[ORIG] === 'R')
+          else if (sc.at(writePos)[ORIG] === RIGHT)
           {
-            sc.at(MRPos)[WPOS]++;  
+            sc.at(writePos)[WPOS]++;  
           }
           else
           {
@@ -578,19 +398,19 @@ function diff2edits(diff, n1s, n2s) // step2
         }
       }
 
-      if (n2s[j][TYPE] < 3)
+      if (rightNodes[j][TYPE] === $atom)
       {
-        addTuple(n2s[j]);
+        addNode(rightNodes[j]);
       }
       else
       {
-        sc.push([n2s[j].slice(0), -99, -99, 0, n2s[j].length - 2, 'R']);
+        sc.push([rightNodes[j].slice(0), -99, -99, 0, rightNodes[j].length - 2, RIGHT]);
       }
       j++;      
     }
     else
     {
-      throw new Error(choice[0]);
+      throw new Error(selection);
     }
 
     // console.log(`\t=> stack ${stack2string(sc)}`); // DDD
@@ -607,9 +427,9 @@ function diff2edits(diff, n1s, n2s) // step2
       {    
         const topr = sc.pop();
         // console.log(`\t\t\tpopping ${frame2string(topr)}`); // DDD
-        if (orig === 'R')
+        if (orig === RIGHT)
         {
-          addTuple(topr[EXP]);
+          addNode(topr[EXP]);
         }
       }
       else
@@ -630,16 +450,7 @@ function coarsifyEdits(edits, n1s) // step 3: turn modify etc. into add/remove
   const edits2 = [];
   for (const edit of edits)
   {
-    if (edit[0] === 'modifyVal' || edit[0] === 'modifyTag')
-    {
-      const [_, tag, pos, newTag] = edit;
-      if (modifs[tag] === undefined)
-      {
-        modifs[tag] = n1map[tag].slice(0);
-      }
-      modifs[tag][pos + 2] = newTag;
-    }
-    else if (edit[0] === 'insertSimple')
+    if (edit[0] === INSERT_CHILD)
     {
       const [_, tag, pos, newTag] = edit;
       if (modifs[tag] === undefined)
@@ -648,7 +459,7 @@ function coarsifyEdits(edits, n1s) // step 3: turn modify etc. into add/remove
       }
       modifs[tag].splice(pos + 2, 0, newTag);
     }
-    else if (edit[0] === 'removeSimple' || edit[0] === 'removeNonSimple')
+    else if (edit[0] === REMOVE_CHILD)
     {
       const [_, tag, pos] = edit;
       if (modifs[tag] === undefined)
@@ -666,7 +477,7 @@ function coarsifyEdits(edits, n1s) // step 3: turn modify etc. into add/remove
   {
     if (modif)
     {
-      edits2.push(['replace', n1map[modif[1]], modif]); 
+      edits2.push(['replaceNode', n1map[modif[1]], modif]); 
     }
   }
 
@@ -681,16 +492,6 @@ function nodeStream(src, parser)
   return ns;
 }
 
-function diff(n1s, n2s, options = {})
-{
-  const maxSolutions = options.maxSolutions || 1000;
-  const returnAllSolutions = options?.returnAllSolutions;
-  const keepGlobalSuboptimalSolutions = options?.keepGlobalSuboptimalSolutions;
-  const keepLocalSuboptimalSolutions = options?.keepLocalSuboptimalSolutions;
-
-  const solutions = step1(n1s, n2s, maxSolutions, returnAllSolutions, keepLocalSuboptimalSolutions, keepGlobalSuboptimalSolutions);
-  return solutions;
-}
 
 function applyEdits(ts, edits)
 {
@@ -700,17 +501,17 @@ function applyEdits(ts, edits)
   {
     switch (edit[0])
     {
-      case 'replace':
+      case 'replaceNode':
         {
           m[edit[1][1]] = edit[2];
           break;
         }
-      case 'add':
+      case ADD_NODE:
         {
           m[edit[1][1]] = edit[1];
           break;
         }
-      case 'remove':
+      case DELETE_NODE:
         {
           m[edit[1][1]] = undefined;
           break;
@@ -748,15 +549,8 @@ function tuple2shortString(t)
   let str;
   switch (t[0])
   {
-    case $lit: str = '$lit'; break;
-    case $id: str = '$id'; break;
-    case $param: str = '$param'; break;
-    case $let: str = '$let'; break;
-    case $letrec: str = '$letrec'; break;
-    case $if: str = '$if'; break;
-    case $set: str = '$set'; break;
-    case $lam: str = '$lam'; break;
-    case $app: str = '$app'; break;
+    case $atom: str = '$atom'; break;
+    case $list: str = '$list'; break;
     default: throw new Error(`cannot handle ${t[0]}`);
   }
   return `(${str}-${t[1]} ${t.slice(2).join(' ')})`;
@@ -780,40 +574,18 @@ function tuple2string(tuple, tuples)
   {
       switch (t[0])
       {
-        case $lit:
-        case $id:
-        case $param:
-          {
-            return t[2];
-          }
-        case $let:
-          {
-            return `(let ((${stringify(lookupTag(t[2]))} ${stringify(lookupTag(t[3]))})) ${stringify(lookupTag(t[4]))})`;
-          }
-        case $letrec:
-          {
-            return `(letrec ((${stringify(lookupTag(t[2]))} ${stringify(lookupTag(t[3]))})) ${stringify(lookupTag(t[4]))})`;
-          }
-        case $if:
-          {
-            return `(if ${stringify(lookupTag(t[2]))} ${stringify(lookupTag(t[3]))} ${stringify(lookupTag(t[4]))})`;
-          }
-        case $set:
-          {
-            return `(set! ${stringify(m[t[2]])} ${stringify(m[t[3]])})`;
-          }
-        case $lam:
+        case $atom:
         {
-          return `(lambda (${t.slice(2, -1).map(x => stringify(m[x])).join(' ')}) ${stringify(m[t.at(-1)])})`;
+          return t[2];
         }
-        case $app:
+        case $list:
           {
-            return `(${stringify(lookupTag(t[2]))} ${t.slice(3).map(x => stringify(lookupTag(x))).join(' ')})`;
+            // return `(${stringify(lookupTag(t[2]))} ${t.slice(3).map(x => stringify(lookupTag(x))).join(' ')})`;
+            return `(${t.slice(2).map(x => stringify(lookupTag(x))).join(' ')})`;
           }
         default: throw new Error(`cannot handle ${t}`);
       }
     }
-
   return stringify(tuple, m);
 }
 
