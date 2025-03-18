@@ -3,7 +3,7 @@ import { Null, Pair, SchemeParser, Sym } from './sexp-reader.js';
 
 export { nodeStream, nodeMap,
   computeSelection, MATCH, LEFT, RIGHT,
-  selection2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, diff2string };
+  selection2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, selections2string };
 
 // TODO: quote is handled as an application
 
@@ -17,26 +17,26 @@ const MATCH = 0;
 const LEFT = 2;
 const RIGHT = 4;
 
+function selection2string(selection)
+{
+  switch (selection)
+  {
+    case MATCH: return 'M';
+    case LEFT: return 'L';
+    case RIGHT: return 'R';
+    default: throw new Error(selection);
+  }
+}
+
 // edits
 const ADD_NODE = 0;
 const DELETE_NODE = 1;
 const INSERT_CHILD = 2;
 const REMOVE_CHILD = 4;
 
-function diff2string(diff)
+function selections2string(selections)
 {
-  let sb = "";
-  for (const d of diff)
-  {
-    switch (d)
-    {
-      case MATCH: sb += 'M'; break;
-      case LEFT: sb += 'L'; break;
-      case RIGHT: sb += 'R'; break;
-      default: throw new Error(d);
-    }
-  }
-  return sb;
+  return selections.map(selection2string).join("");
 }
 
 function ast2tuples(ast)
@@ -216,7 +216,7 @@ function selection2edits(selections, leftNodes, rightNodes) // step2
     edits.push(edit);
   }
 
-  function removeNode(el)
+  function deleteNode(el)
   {
     const edit = [DELETE_NODE, el];
     // console.log(`\t\tremove node ${tuple2shortString(el)}`); // DDD
@@ -239,7 +239,7 @@ function selection2edits(selections, leftNodes, rightNodes) // step2
 
   function frame2string(frame)
   {
-    return `${tuple2shortString(frame[EXP])} R ${frame[RPOS]}/${frame[RLEN]} W ${frame[WPOS]}/${frame[WLEN]} |${frame[ORIG]}|`;
+    return `${tuple2shortString(frame[EXP])} R ${frame[RPOS]}/${frame[RLEN]} W ${frame[WPOS]}/${frame[WLEN]} |${selection2string(frame[ORIG])}|`;
   }
 
   function stack2string(stack)
@@ -247,130 +247,119 @@ function selection2edits(selections, leftNodes, rightNodes) // step2
     return stack.map(frame2string).toReversed().join(" ");
   }
 
-  function openWritePos()
+  function openWriteFrame()
   {
     for (let s = sc.length - 1; s >= 0; s--)
     {
+      const frame = sc.at(s);
       // console.log(`\t\tinspecting ${s}/${sc.length - 1}`); // DEBUG
-      const pos = sc.at(s)[WPOS];
-      const len = sc.at(s)[WLEN];
+      const pos = frame[WPOS];
+      const len = frame[WLEN];
       if (pos < len)
       {
         // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
-        return s; // assumption: M or R (L cannot have open write pos)
+        return frame; // assumption: M or R (L cannot have open write pos)
       }
     }
-    return false; // no higher-up match
+    return null; // no higher-up match
   }
 
-  function openReadPos()
+  function openReadFrame()
   {
     for (let s = sc.length - 1; s >= 0; s--)
     {
+      const frame = sc.at(s);
       // console.log(`\t\tinspecting ${s}/${sc.length - 1}`); // DEBUG
-      const pos = sc.at(s)[RPOS];
-      const len = sc.at(s)[RLEN];
+      const pos = frame[RPOS];
+      const len = frame[RLEN];
       if (pos < len)
       {      
         // console.log(`\t\t\tmatch frame ${frame2string(sc.at(s))}`) // DEBUG
-        return s; // assumption: M or L (R cannot have open read pos)
+        return frame; // assumption: M or L (R cannot have open read pos)
       }
     }
-    return false; // no higher-up match
+    return null; // no higher-up match
+  }
+
+  function handleRead()
+  {
+    const readFrame = openReadFrame(); // only LEFT or MATCH orig
+    if (readFrame !== null)
+    {
+      if (readFrame[ORIG] === MATCH)
+      {
+        removeChild(readFrame[EXP][TAG], readFrame[WPOS]);
+      }
+      readFrame[RPOS]++;
+    }
+  }
+
+  function handleWriteMatch(leftNode)
+  {
+    const writeFrame = openWriteFrame(); // only RIGHT or MATCH orig
+    if (writeFrame !== null)
+    {
+      if (writeFrame[ORIG] === MATCH)
+      {
+        insertChild(writeFrame[EXP][TAG], writeFrame[WPOS], leftNode[TAG]);
+      }
+      else if (writeFrame[ORIG] === RIGHT)
+      {
+        // strategy: instead of adding the 'new' right node and then updating it,
+        // we immediately overwrite children in new nodes
+        // console.log(`\t\toverwrite ${tuple2shortString(writeFrame[EXP])} ${writeFrame[WPOS]} ${leftNode[TAG]}`); // DDD
+        writeFrame[EXP][writeFrame[WPOS]+2] = leftNode[TAG]; // overwrite    
+      }
+      writeFrame[WPOS]++;  
+    }
+  }
+
+  function handleWriteRight(rightNode)
+  {
+    const writeFrame = openWriteFrame(); // only RIGHT or MATCH orig
+    if (writeFrame !== null)
+    {
+      if (writeFrame[ORIG] === MATCH)
+      {
+        insertChild(writeFrame[EXP][TAG], writeFrame[WPOS], rightNode[TAG]);
+      }
+      writeFrame[WPOS]++;  
+    }
   }
 
   while (c < selections.length)
   {
     const selection = consumeSelection();
-    // console.log(`\n${n1s[i] && tuple2shortString(n1s[i])} %c${['MATCH', 'MODIFY', 'LEFT', 'RIGHT'][choice]}%c ${n2s[j] && tuple2shortString(n2s[j])}`, 'color:blue', 'color:default'); // DDD
+    const leftNode = leftNodes[i];
+    const rightNode = rightNodes[j];
+    // console.log(`\n${leftNodes[i] && tuple2shortString(leftNode)} %c${selection2string(selection)}%c ${rightNode && tuple2shortString(rightNode)}`, 'color:blue', 'color:default'); // DDD
     // console.log(`\tstack ${stack2string(sc)}`);
 
-    if (selection === MATCH) // with a match TYPE n1s[i] === n2s[j] always
+    if (selection === MATCH) // always: leftNode[TYPE] === rightNode[TYPE]
     {
-      removeNode(rightNodes[j]);
+      deleteNode(rightNode); // keep left, remove right copy
       if (sc.length > 0)
       {
-        const writePos = openWritePos();
-        if (writePos !== false)
-        {
-          if (sc.at(writePos)[ORIG] === MATCH)
-          {
-            insertChild(sc.at(writePos)[EXP][TAG], sc.at(writePos)[WPOS], leftNodes[i][TAG]);
-            sc.at(writePos)[WPOS]++;  
-          }
-          else if (sc.at(writePos)[ORIG] === RIGHT)
-          {
-            // console.log(`\t\toverwrite ${tuple2shortString(sc.at(MRPos)[EXP])} ${sc.at(MRPos)[WPOS]} ${n1s[i][TAG]}`); // DDD
-            sc.at(writePos)[EXP][sc.at(writePos)[WPOS]+2] = leftNodes[i][TAG]; // overwrite    
-            sc.at(writePos)[WPOS]++;  
-          }
-          else
-          {
-            throw new Error();
-          }
-        }
-
-        const readPos = openReadPos();
-        if (readPos !== false)
-        {
-          if (sc.at(readPos)[ORIG] === MATCH)
-          {
-            removeChild(sc.at(readPos)[EXP][TAG], sc.at(readPos)[WPOS]);
-            sc.at(readPos)[RPOS]++;
-          }
-          else if (sc.at(readPos)[ORIG] === LEFT)
-          {
-            sc.at(readPos)[RPOS]++;
-          }
-          else
-          {
-            throw new Error();
-          }
-        }
+        handleWriteMatch(leftNode);
+        handleRead();
       }
-      
-      if (leftNodes[i][TYPE] === $atom) // if not compound exp
+      if (leftNode[TYPE] !== $atom)
       {
-        // nothing
-      }
-      else
-      {
-        sc.push([leftNodes[i], 0, leftNodes[i].length - 2, 0, rightNodes[j].length - 2, MATCH]); 
+        sc.push([leftNode, 0, leftNode.length - 2, 0, rightNode.length - 2, MATCH]); 
       }
       i++;
       j++;
     }
     else if (selection === LEFT)
     {
-      removeNode(leftNodes[i]);
+      deleteNode(leftNode);
       if (sc.length > 0)
       {
-        const readPos = openReadPos();
-        if (readPos !== false)
-        {
-          if (sc.at(readPos)[ORIG] === MATCH)
-          {
-            removeChild(sc.at(readPos)[EXP][TAG], sc.at(readPos)[WPOS]);
-            sc.at(readPos)[RPOS]++;
-          }
-          else if (sc.at(readPos)[ORIG] === LEFT)
-          {
-            sc.at(readPos)[RPOS]++;
-          }
-          else
-          {
-            throw new Error();
-          }
-        }
+        handleRead();
       }
-
-      if (leftNodes[i][TYPE] === $atom)
+      if (leftNode[TYPE] !== $atom)
       {
-        // nothing
-      }
-      else
-      {
-        sc.push([leftNodes[i], 0, leftNodes[i].length - 2, -99, -99, LEFT]); 
+        sc.push([leftNode, 0, leftNode.length - 2, -99, -99, LEFT]); 
       }
       i++;
     }
@@ -379,32 +368,15 @@ function selection2edits(selections, leftNodes, rightNodes) // step2
       // add happens on pop for compound exps (due to possible overwrites) 
       if (sc.length > 0)
       {
-        const writePos = openWritePos();
-        if (writePos !== false)
-        {
-          if (sc.at(writePos)[ORIG] === MATCH)
-          {
-            insertChild(sc.at(writePos)[EXP][TAG], sc.at(writePos)[WPOS], rightNodes[j][TAG]); // insert attr
-            sc.at(writePos)[WPOS]++;  
-          }
-          else if (sc.at(writePos)[ORIG] === RIGHT)
-          {
-            sc.at(writePos)[WPOS]++;  
-          }
-          else
-          {
-            throw new Error();
-          }
-        }
+        handleWriteRight(rightNode);
       }
-
-      if (rightNodes[j][TYPE] === $atom)
+      if (rightNode[TYPE] === $atom)
       {
-        addNode(rightNodes[j]);
+        addNode(rightNode);
       }
       else
       {
-        sc.push([rightNodes[j].slice(0), -99, -99, 0, rightNodes[j].length - 2, RIGHT]);
+        sc.push([rightNode.slice(0), -99, -99, 0, rightNode.length - 2, RIGHT]);
       }
       j++;      
     }
@@ -417,19 +389,20 @@ function selection2edits(selections, leftNodes, rightNodes) // step2
 
     while (sc.length > 0)
     {
-      const rpos = sc.at(-1)[RPOS];
-      const rlen = sc.at(-1)[RLEN];
-      const wpos = sc.at(-1)[WPOS];
-      const wlen = sc.at(-1)[WLEN];
-      const orig = sc.at(-1)[ORIG];
+      const top = sc.at(-1);
+      const rpos = top[RPOS];
+      const rlen = top[RLEN];
+      const wpos = top[WPOS];
+      const wlen = top[WLEN];
+      const orig = top[ORIG];
       
       if (rpos === rlen && wpos === wlen)
       {    
-        const topr = sc.pop();
-        // console.log(`\t\t\tpopping ${frame2string(topr)}`); // DDD
+        sc.pop();
+        // console.log(`\t\t\tpopping ${frame2string(top)}`); // DDD
         if (orig === RIGHT)
         {
-          addNode(topr[EXP]);
+          addNode(top[EXP]);
         }
       }
       else

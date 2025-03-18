@@ -1,5 +1,5 @@
 import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
-import { nodeStream, computeSelection, selection2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, diff2string } from '../differ.js';
+import { nodeStream, computeSelection, selection2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, selections2string } from '../differ.js';
 
 
 function doDiff(src1, src2, suboptimal)
@@ -20,7 +20,7 @@ function doDiff(src1, src2, suboptimal)
   const solutions = computeSelection(n1s, n2s);
   for (const solution of solutions)
   {
-    console.log(`\n\n*****\nsolution ${diff2string(solution)} for ${p1str} ≈> ${p2str}`);
+    console.log(`\n\n*****\nsolution ${selections2string(solution)} for ${p1str} ≈> ${p2str}`);
 
     const edits = selection2edits(solution, n1s, n2s);
     const edits2 = coarsifyEdits(edits, n1s);

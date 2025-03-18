@@ -1,5 +1,5 @@
 import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
-import { nodeStream, computeSelection, selection2edits, coarsifyEdits, applyEdits, tuples2string, diff2string } from '../differ.js';
+import { nodeStream, computeSelection, selection2edits, coarsifyEdits, applyEdits, tuples2string, selection2string } from '../differ.js';
 
 function doDiff(src1, src2)
 {
