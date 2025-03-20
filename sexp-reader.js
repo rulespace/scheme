@@ -248,10 +248,10 @@ export class SchemeParser
 
   parse(str)
   {
-    var tokenizer = new SchemeTokenizer(str);
-    var datas = [];
-    var data;
-    var sp = { pos: tokenizer.reader.pos, line: tokenizer.reader.line, linePos: tokenizer.reader.linePos };
+    const tokenizer = new SchemeTokenizer(str);
+    const datas = [];
+    let data;
+    const sp = { pos: tokenizer.reader.pos, line: tokenizer.reader.line, linePos: tokenizer.reader.linePos };
     while ((data = tokenizer.next()) !== null)
     {
       datas.push(data);

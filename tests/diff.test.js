@@ -1,59 +1,60 @@
 import { Null, Pair, SchemeParser, Sym } from '../sexp-reader.js';
-import { nodeStream, computeSelection, selection2edits, coarsifyEdits, applyEdits, tuples2string, tuple2shortString, selections2string } from '../differ.js';
+import { DiffConfig } from '../differ-ast.js';
 
 
-function doDiff(src1, src2, suboptimal)
+function doDiff(leftSrc, rightSrc, diffConfig)
 {
   const parser = new SchemeParser();
 
-  const n1s = nodeStream(src1, parser);
-  const p1str = tuples2string(n1s);
-
-  const n2s = nodeStream(src2, parser);
-  const p2str = tuples2string(n2s);
+  const leftNodes = diffConfig.createNodes(leftSrc, parser);
+  const rightNodes = diffConfig.createNodes(rightSrc, parser);
   
-  console.log(`p1     ${p1str}
-  ${n1s.map(tuple2shortString).join(' ')}`);
-  console.log(`p2     ${p2str}
-  ${n2s.map(tuple2shortString).join(' ')}`);
+  const leftStr = diffConfig.nodes2string(leftNodes);
+  const rightStr = diffConfig.nodes2string(rightNodes);
 
-  const solutions = computeSelection(n1s, n2s);
-  for (const solution of solutions)
+  console.log(`p1     ${leftStr}
+  ${leftNodes.join(' ')}`);
+  console.log(`p2     ${rightStr}
+  ${rightNodes.join(' ')}`);
+
+  const differ = diffConfig.createDiffer();
+  const selection = differ.computeSelection(leftNodes, rightNodes);
+
+  console.log(`selection: ${differ.selection2string(selection)}`);
+
+  const edits = differ.selection2edits(selection, leftNodes, rightNodes);
+  const edits2 = differ.coarsifyEdits(edits, leftNodes);
+
+  const leftEdit = differ.applyEdits(leftNodes, edits2);  
+  const leftEditStr = diffConfig.nodes2string(leftEdit);
+  
+  // console.log(`leftEdit ${leftEditStr} // DEBUG
+  // ${leftEdit.join(' ')}`);
+  // console.log(`${leftEdit.map(diffConfig.node2shortString).join(' ')}`);
+
+  if (leftEditStr !== rightStr)
   {
-    console.log(`\n\n*****\nsolution ${selections2string(solution)} for ${p1str} ≈> ${p2str}`);
-
-    const edits = selection2edits(solution, n1s, n2s);
-    const edits2 = coarsifyEdits(edits, n1s);
-
-    const p1edit = applyEdits(n1s, edits2);  
-    const p1editstr = tuples2string(p1edit);
-  
-    console.log(`p1edit ${p1editstr}
-    ${p1edit.map(tuple2shortString).join(' ')}`);
-  
-    if (p1editstr !== p2str)
-    {
-      throw new Error(`match error:
-      p1edit: ${p1editstr}
-      p2    : ${p2str}`);
-    }
-    
-  }
+    throw new Error(`match error:
+    leftEditStr: ${leftEditStr}
+    rightStr   : ${rightStr}`);
+  }          
 }
 
-function test(src1, src2, suboptimal = true)
+function test(src1, src2)
 {
+  const diffConfig = new DiffConfig();
   console.log("\n============");
   console.log("\n*** L->R ***");
-  doDiff(src1, src2, suboptimal);
+  doDiff(src1, src2, diffConfig);
   console.log("\n*** R->L ***");
-  doDiff(src2, src1, suboptimal);
+  doDiff(src2, src1, diffConfig);
 }
 
 function testEq(src, suboptimal = true)
 {
+  const diffConfig = new DiffConfig();
   console.log("\n============");
-  doDiff(src, src, suboptimal);
+  doDiff(src, src, diffConfig);
 }
 
 const start = performance.now();
